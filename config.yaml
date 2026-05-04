@@ -1,0 +1,271 @@
+# ============================================================
+# Configuration du montage vidéo en grilles progressives
+# ============================================================
+
+# --- Fichiers ---
+input_video: "IMG_0175.MOV"
+input_anomalie: null
+output_video: "montage_final.mp4"
+
+# --- Résolution ---
+final_w: 3840
+final_h: 2160
+cellules_carrees: true
+
+# --- Durée ---
+# Concepts :
+#   - "séquence" = une grille (ex: 4x4) jouée pendant 1 boucle de la vidéo source
+#   - "phase"    = enchaînement complet 1→4→16→64→256→1024 (toutes les séquences)
+#                  Chaque phase a SES PROPRES anomalies (re-tirées au sort).
+#   - "montage"  = enchaînement de N phases jusqu'à atteindre duree_max.
+#
+# Mode de calcul de la durée (mode_duree) :
+#   "duree_max" : on enchaîne des phases jusqu'à atteindre duree_max.
+#                 Chaque phase a de nouvelles anomalies aléatoires.
+#                 (recommandé pour des vidéos longues)
+#   "boucle"    : 1 seule phase, chaque séquence dure 1 boucle de vidéo source.
+#                 Durée totale = nb_séquences × durée_source.
+#   "n_boucles" : 1 seule phase, chaque séquence dure N boucles.
+#   "total"     : 1 seule phase, durée_totale répartie également entre séquences.
+mode_duree: "duree_max"
+duree_max: 240                         # secondes (utilisé si mode_duree="duree_max")
+duree_totale: 240                      # utilisé seulement si mode_duree="total"
+n_boucles_par_phase: 1                 # utilisé si mode_duree="n_boucles"
+
+# Que faire si duree_max ne tombe pas pile sur une fin de phase ?
+#   "tronquer"      : s'arrêter à la dernière phase complète qui rentre
+#                     (ex: 600s / 132s = 4 phases complètes = 528s)
+#   "etendre"       : continuer la phase suivante partiellement jusqu'à duree_max
+#                     (ex: 4 phases complètes + 72s de la 5e = 600s)
+#   "depasser"      : continuer même au-delà pour finir une phase complète
+#                     (ex: 5 phases complètes = 660s, dépasse les 600s demandés)
+fin_partielle: "etendre"
+
+max_cases: 4096                        # carré parfait : 4, 16, 64, 256, 1024, 4096
+
+# --- Anomalies (mode classique pour les phases sans masque) ---
+mode_anomalie: "filtres"               # "filtres" | "video" | "mixte"
+changement_anomalie: "phase"           # "phase" | "intervalle" | "fixe"
+intervalle_changement: 30
+mode_quantite: "fixe"                  # "fixe" | "proportionnel"
+nb_anomalies_fixe: 1
+ratio_proportionnel: 0.015
+
+# --- Encodage ---
+preset_x264: "fast"                    # ultrafast, superfast, veryfast, faster, fast, medium
+crf: 20
+
+# ============================================================
+# AUDIO — musique en fond
+# ============================================================
+audio:
+  actif: true                          # false : vidéo silencieuse comme avant
+
+  # Fichier(s) musique.
+  # Format simple (ancien) :
+  #   - "musiques/musique.mp3"
+  # Format avancé (nouveau) avec contrôle des bornes :
+  #   - { fichier: "musiques/musique.mp3", debut: 30, fin: 90 }
+  #     → bornes en secondes (30s à 90s)
+  #   - { fichier: "musiques/musique.mp3", debut: "2:00", fin: "3:30" }
+  #     → bornes en format mm:ss (2 min à 3 min 30)
+  #   - { fichier: "musiques/musique.mp3", debut: "1:23:45" }
+  #     → format hh:mm:ss aussi accepté
+  #   - { fichier: "musiques/musique.mp3", aleatoire: true, duree: 60 }
+  #     → tire au sort un point de départ, prend 60s à partir de là
+  #   - { fichier: "musiques/musique.mp3" }
+  #     → utilise le fichier entier (du début à la fin)
+  fichiers:
+    #- "musiques/spiral.mp3"
+    # Exemples (décommente pour utiliser) :
+    - { fichier: "musiques/spiral.mp3", debut: "2:00" }
+    # - { fichier: "musiques/album.mp3", debut: "1:30", fin: "4:15" }
+    # - { fichier: "musiques/album.mp3", aleatoire: true, duree: 120 }
+
+  # Comportement à chaque changement de phase :
+  #   "reset"    : la musique reprend du début à chaque nouvelle phase
+  #   "continu"  : la musique tourne en boucle continue, ignore les changements
+  comportement: "reset"
+
+  # Comportement à chaque sous-segment (intervalle ou masque sequence/apparition)
+  comportement_sous_segment: "continu"
+
+  # Audio original de la vidéo source : tu as choisi "couper"
+  # (seule la musique reste, audio source supprimé)
+  audio_source: "couper"
+
+  # Volumes (1.0 = normal)
+  volume_musique: 0.7
+  volume_source: 1.0                   # ignoré quand audio_source="couper"
+
+  # Fondus en début et fin de vidéo
+  fade_in: 1.0
+  fade_out: 2.0
+
+# ============================================================
+# EFFETS SPÉCIAUX — au-delà de 1024 cellules
+# ============================================================
+# Système d'effets supplémentaires qui s'appliquent aux phases avec beaucoup
+# de cellules (typiquement 1024 et 4096). Plusieurs effets peuvent être
+# combinés : ils s'enchaînent en sous-séquences au sein d'une phase.
+effets:
+  actif: true                          # false : désactive tout
+
+  # Sur quelles phases appliquer les effets ?
+  #   "min_cases" : toutes les phases avec >= seuil_cases cellules
+  #   "specifique": liste exacte de tailles de grille
+  portee: "min_cases"
+  seuil_cases: 1024                    # phases avec ≥ 1024 cellules
+  phases_specifiques: [1024, 4096]
+
+  # Effets activés (chacun fait une sous-séquence dans la phase)
+  # Si plusieurs sont activés, ils s'enchaînent dans l'ordre listé.
+  # Tu peux dupliquer les noms pour faire passer un effet plusieurs fois.
+  liste:
+    - "mosaique"         # visage/vidéo recomposée par les cellules
+    - "lsd"
+    - "masque"           # ton système actuel : un motif (7, lettre)
+    #- "mur_moniteurs"    # différentes vidéos par cellule
+    - "lsd"              # effet psychédélique (ondulations + couleurs saturées)
+    # - "onde"             # à venir
+    # - "automate"         # à venir
+
+  # Durée de chaque effet (par défaut = 1 boucle vidéo source)
+  # Tu peux spécifier une durée personnalisée par effet :
+  durees:
+    masque: null                       # null = boucle source complète
+    mosaique: null
+    mur_moniteurs: null
+    lsd: null
+
+  # ============ CONFIG MOSAÏQUE ============
+  mosaique:
+    # Vidéo "carte" qui définit la luminosité de chaque cellule.
+    # Idéalement un visage ou une vidéo très contrastée pour bien voir l'effet.
+    video_carte: "IMG_0175.MOV"
+    # Bornes (mêmes formats que pour audio : secondes ou "mm:ss")
+    debut: 0
+    fin: null                          # null = jusqu'à la fin
+    # Comportement si la carte est plus courte que l'effet
+    boucler_carte: true
+    # Force l'extraction en N&B avant modulation (souvent + propre visuellement)
+    carte_en_noir_blanc: false
+    # Intensité de la modulation (0 = aucune, 1 = totale)
+    intensite: 1.0
+    # Mode de fusion :
+    #   "multiply"  : la carte assombrit (effet luminance, classique)
+    #   "screen"    : la carte éclaircit (effet inverse)
+    #   "overlay"   : mix des deux selon luminance
+    mode_fusion: "multiply"
+
+  # ============ CONFIG MUR DE MONITEURS ============
+  mur_moniteurs:
+    # Liste de vidéos qui seront tirées au sort par cellule.
+    # Si la liste est plus courte que le nombre de cellules, on répète aléatoirement.
+    videos:
+      - "videos/clip1.mp4"
+      - "videos/clip2.mp4"
+      - "videos/clip3.mp4"
+    # Chaque cellule prend-elle un point de départ aléatoire dans son clip
+    # ou démarre-t-elle à la même position ?
+    decalage_aleatoire: true
+    # Inclure aussi la vidéo source principale dans le tirage ?
+    inclure_source: true
+
+  # ============ CONFIG LSD ============
+  # Effet psychédélique : distorsion ondulatoire + aberration chromatique
+  # + couleurs saturées + lignes de contour. Inspiré de la photo de référence.
+  lsd:
+    # Amplitude des ondulations (en pixels). Plus élevé = plus de déformation.
+    # 0 = pas d'ondulation, 50-200 = visible, 300+ = extrême
+    amplitude_onde: 120
+    # Vitesse des ondulations (cycles par seconde)
+    vitesse_onde: 0.8
+    # Fréquence spatiale (nombre d'ondes visibles à l'écran)
+    frequence_onde: 8
+    # Intensité de l'aberration chromatique (décalage des canaux R/G/B)
+    aberration: 8
+    # Saturation des couleurs (1.0 = normal, 3.0 = très saturé)
+    saturation: 2.5
+    # Décalage de teinte (0-360°). 240 = bleu/violet comme la photo
+    teinte: 240
+    # Force des lignes de contour (0 = aucune, 1.0 = maximum)
+    lignes_force: 0.7
+    # Mode du contour : "edges" (lignes nettes) ou "wires" (lignes fines)
+    lignes_mode: "edges"
+
+# ============================================================
+# MASQUES — pré-réglé selon tes choix
+# ============================================================
+masques:
+  actif: true
+
+  # Tes choix :
+  portee: "specifique"                 # uniquement les phases listées
+  phases_specifiques: [1024]           # → seule la grille 32×32 utilise un masque
+
+  evolution: "apparition"              # le motif se construit progressivement
+  duree_apparition: 120                # secondes pour atteindre 100% du motif
+
+  # En mode "apparition" : faut-il garder le MÊME filtre pendant toute l'apparition,
+  # ou en re-tirer un à chaque étape ?
+  #   "fixe"  : le filtre est tiré une fois au début, puis ne change plus
+  #             (recommandé : on voit le motif se construire avec une couleur cohérente)
+  #   "change": à chaque étape, un nouveau filtre est tiré
+  #             (effet kaleidoscope, le motif clignote de couleur en couleur)
+  apparition_filtre: "fixe"
+
+  mode_filtre: "tirage_global"         # 1 filtre tiré au sort, appliqué partout
+
+  # Paramètres masque
+  images:
+    - "masques/sept.png"
+  seuil: 128
+  inverser: false
+
+  # (utilisés seulement si tu changes evolution)
+  duree_par_image: 30
+  phase_minimum: 256
+
+# --- Bibliothèque de filtres-anomalies ---
+filtres_anomalies:
+  - { nom: "inversion",        filtre: "negate", actif: true }
+  - { nom: "teinte_rouge",     filtre: "hue=h=0:s=2", actif: true }
+  - { nom: "teinte_verte",     filtre: "hue=h=120:s=2", actif: true }
+  - { nom: "teinte_bleue",     filtre: "hue=h=240:s=2", actif: true }
+  - { nom: "teinte_violette",  filtre: "hue=h=300:s=2", actif: true }
+  - { nom: "sepia",            filtre: "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131", actif: true }
+  - { nom: "noir_blanc",       filtre: "eq=saturation=0", actif: true }
+  - { nom: "contraste_fort",   filtre: "eq=contrast=2:saturation=1.5", actif: true }
+  - { nom: "desature_froid",   filtre: "colorbalance=rs=-0.3:bs=0.3", actif: true }
+  - { nom: "desature_chaud",   filtre: "colorbalance=rs=0.3:bs=-0.3", actif: true }
+  - { nom: "solarize",         filtre: "lutrgb=r=if(gt(val\\,128)\\,255-val\\,val):g=if(gt(val\\,128)\\,255-val\\,val):b=if(gt(val\\,128)\\,255-val\\,val)", actif: true }
+  - { nom: "seuil_dur",        filtre: "lutrgb=r=if(gt(val\\,128)\\,255\\,0):g=if(gt(val\\,128)\\,255\\,0):b=if(gt(val\\,128)\\,255\\,0)", actif: true }
+
+  - { nom: "rotation_180",     filtre: "hflip,vflip", actif: true }
+  - { nom: "miroir_h",         filtre: "hflip", actif: true }
+  - { nom: "miroir_v",         filtre: "vflip", actif: true }
+  - { nom: "rotation_90",      filtre: "transpose=1", actif: true }
+  - { nom: "rotation_anti",    filtre: "transpose=2", actif: true }
+  - { nom: "rotation_continue", filtre: "rotate=t*PI/12:c=black:ow=iw:oh=ih", actif: true }
+
+  - { nom: "flou_extreme",     filtre: "boxblur=40:3", actif: true }
+  - { nom: "flou_gauss_fort",  filtre: "gblur=sigma=20", actif: true }
+  - { nom: "flou_movement",    filtre: "boxblur=2:1:cr=2:1:luma_radius=30", actif: true }
+
+  - { nom: "edgedetect_wires", filtre: "edgedetect=mode=wires:low=0.1:high=0.4", actif: true }
+  - { nom: "edgedetect_canny", filtre: "edgedetect=mode=canny:low=0.1:high=0.4", actif: true }
+  - { nom: "edgedetect_color", filtre: "edgedetect=mode=colormix:high=0", actif: true }
+  - { nom: "sobel",            filtre: "sobel", actif: true }
+  - { nom: "prewitt",          filtre: "prewitt", actif: true }
+  - { nom: "roberts",          filtre: "roberts", actif: true }
+  - { nom: "convolution_relief",  filtre: "convolution='-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2'", actif: true }
+  - { nom: "convolution_sharpen", filtre: "convolution='0 -1 0 -1 5 -1 0 -1 0:0 -1 0 -1 5 -1 0 -1 0:0 -1 0 -1 5 -1 0 -1 0:0 -1 0 -1 5 -1 0 -1 0'", actif: true }
+
+  - { nom: "ralenti_2x",       filtre: "setpts=2.0*PTS", actif: true }
+  - { nom: "accelere_2x",      filtre: "setpts=0.5*PTS", actif: true }
+  - { nom: "strobe",           filtre: "framestep=3", actif: true }
+
+  - { nom: "bruit_fort",       filtre: "noise=alls=80:allf=t+u", actif: true }
+  - { nom: "pixelise_fort",    filtre: "scale=iw/4:ih/4,scale=iw*4:ih*4:flags=neighbor,setsar=1", actif: true }
+  - { nom: "pixelise_extreme", filtre: "scale=iw/2:ih/2,scale=iw*2:ih*2:flags=neighbor,setsar=1", actif: true }

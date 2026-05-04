@@ -1,0 +1,39 @@
+# Dossier de travail temporaire (très lourd, ne pas commit)
+travail_montage/
+
+# Fichiers de sortie générés
+montage_final.mp4
+*.mov
+*.mp4
+*.MOV
+*.MP4
+
+# Fichiers audio source
+*.mp3
+*.wav
+*.m4a
+
+# Mais on garde quand même les images masques (légères)
+!masques/*.png
+!masques/*.jpg
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.Python
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
