@@ -41,7 +41,7 @@ n_boucles_par_phase: 1                 # utilisé si mode_duree="n_boucles"
 #                     (ex: 5 phases complètes = 660s, dépasse les 600s demandés)
 fin_partielle: "etendre"
 
-max_cases: 4096                        # carré parfait : 4, 16, 64, 256, 1024, 4096
+max_cases: 1024                        # carré parfait : 4, 16, 64, 256, 1024, 4096
 
 # --- Anomalies (mode classique pour les phases sans masque) ---
 mode_anomalie: "filtres"               # "filtres" | "video" | "mixte"
@@ -54,6 +54,28 @@ ratio_proportionnel: 0.015
 # --- Encodage ---
 preset_x264: "fast"                    # ultrafast, superfast, veryfast, faster, fast, medium
 crf: 20
+
+# --- Performance ---
+performance:
+  # Encodeur vidéo :
+  #   "auto"           : détecte automatiquement le meilleur dispo
+  #   "videotoolbox"   : Mac Apple Silicon / Intel récent (rapide, qualité ok)
+  #   "x264"           : encodeur logiciel classique (lent, qualité maximale)
+  #   "nvenc"          : GPU NVIDIA
+  encodeur: "auto"
+
+  # Qualité de l'encodeur matériel (1-100, plus haut = mieux mais plus lourd)
+  # Comparable au CRF mais inversé. 60-70 est un bon compromis.
+  qualite_hw: 65
+
+  # Nombre de jobs ffmpeg en parallèle.
+  # "auto" = nombre de cœurs CPU - 1 (recommandé sur Apple Silicon)
+  # 1 = pas de parallélisation (mode debug, plus lisible)
+  parallelisme: "auto"
+
+  # Cache : ne pas re-générer un fichier identique déjà calculé
+  # (clé basée sur source + filtre + bornes + dimensions)
+  cache_actif: true
 
 # ============================================================
 # AUDIO — musique en fond
@@ -76,7 +98,7 @@ audio:
   #   - { fichier: "musiques/musique.mp3" }
   #     → utilise le fichier entier (du début à la fin)
   fichiers:
-    #- "musiques/spiral.mp3"
+    # - "musiques/spiral.mp3"
     # Exemples (décommente pour utiliser) :
     - { fichier: "musiques/spiral.mp3", debut: "2:00" }
     # - { fichier: "musiques/album.mp3", debut: "1:30", fin: "4:15" }
@@ -123,7 +145,6 @@ effets:
   # Tu peux dupliquer les noms pour faire passer un effet plusieurs fois.
   liste:
     - "mosaique"         # visage/vidéo recomposée par les cellules
-    - "lsd"
     - "masque"           # ton système actuel : un motif (7, lettre)
     #- "mur_moniteurs"    # différentes vidéos par cellule
     - "lsd"              # effet psychédélique (ondulations + couleurs saturées)
@@ -142,7 +163,7 @@ effets:
   mosaique:
     # Vidéo "carte" qui définit la luminosité de chaque cellule.
     # Idéalement un visage ou une vidéo très contrastée pour bien voir l'effet.
-    video_carte: "IMG_0175.MOV"
+    video_carte: "./IMG_0175.MOV"
     # Bornes (mêmes formats que pour audio : secondes ou "mm:ss")
     debut: 0
     fin: null                          # null = jusqu'à la fin
