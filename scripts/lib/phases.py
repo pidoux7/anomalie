@@ -61,6 +61,11 @@ def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
     n_cellules = taille * taille
     video_eff, debut_eff = _resoudre_video_source(directives, video_normale, debut_phase)
 
+    if directives.get("source") == "video" and video_anomalie_externe is None:
+        print("ERREUR scenario : 'source: video' demandé mais input_anomalie "
+              "n'est pas défini dans la config.")
+        sys.exit(1)
+
     # Effet pleine grille ?
     if "effet" in directives:
         jouer_effet(directives["effet"], video_eff, video_anomalie_externe,

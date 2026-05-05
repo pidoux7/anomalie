@@ -37,8 +37,14 @@ def main():
     if not Path(config.INPUT_VIDEO).exists():
         print(f"Vidéo principale introuvable : {config.INPUT_VIDEO}")
         sys.exit(1)
-    if config.MODE_ANOMALIE in ("video", "mixte") and not Path(config.INPUT_ANOMALIE).exists():
+    # input_anomalie est requis si mode_anomalie l'utilise OU si un scenario
+    # référence `source: "video"` (impossible à savoir avant le run, donc on
+    # vérifie simplement qu'il pointe sur un fichier existant s'il est défini).
+    if config.INPUT_ANOMALIE and not Path(config.INPUT_ANOMALIE).exists():
         print(f"Vidéo d'anomalie introuvable : {config.INPUT_ANOMALIE}")
+        sys.exit(1)
+    if config.MODE_ANOMALIE in ("video", "mixte") and not config.INPUT_ANOMALIE:
+        print("ERREUR : mode_anomalie nécessite input_anomalie défini.")
         sys.exit(1)
 
     if config.CHANGEMENT_ANOMALIE == "fixe":
@@ -51,8 +57,11 @@ def main():
     preparer_video(config.INPUT_VIDEO, base_full,
                     config.DUREE_TOTALE, config.FINAL_W, config.FINAL_H)
 
+    # On prépare anomalie_full dès que input_anomalie est défini : ainsi le
+    # mode auto (mode_anomalie=video/mixte) et le mode scenario (source: video
+    # par séquence) y ont accès. Sans coût significatif si jamais utilisé.
     anomalie_full = None
-    if config.MODE_ANOMALIE in ("video", "mixte"):
+    if config.INPUT_ANOMALIE:
         anomalie_full = config.WORK_DIR / "anomalie.mp4"
         preparer_video(config.INPUT_ANOMALIE, anomalie_full,
                         config.DUREE_TOTALE, config.FINAL_W, config.FINAL_H)

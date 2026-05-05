@@ -333,6 +333,11 @@ def construire_sous_segment(video_normale, video_anomalie_externe,
     paths = []
     taches_anomalies = []  # (source, dest, debut, duree, cw, ch, filtre)
 
+    # ffprobe la vidéo externe une seule fois (évite N appels pour N cellules)
+    duree_externe = None
+    if any(anomalies_par_pos[p][0] == "video" for p in positions_anomalies):
+        duree_externe = get_duration(video_anomalie_externe)
+
     for i in range(n_cellules):
         if i in positions_anomalies:
             type_a, info_a = anomalies_par_pos[i]
@@ -346,7 +351,6 @@ def construire_sous_segment(video_normale, video_anomalie_externe,
                         (video_normale, mini, debut, duree, cell_w, cell_h, info_a[1])
                     )
                 else:
-                    duree_externe = get_duration(video_anomalie_externe)
                     debut_ext = random.uniform(0, max(0, duree_externe - duree))
                     taches_anomalies.append(
                         (video_anomalie_externe, mini, debut_ext, duree, cell_w, cell_h, None)
