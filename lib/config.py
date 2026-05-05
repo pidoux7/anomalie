@@ -142,6 +142,9 @@ EFFETS_LISTE = EFFETS.get("liste", []) if EFFETS_ACTIFS else []
 
 AUDIO = cfg.get("audio", {"actif": False})
 AUDIO_ACTIF = AUDIO.get("actif", False)
+AUDIO_MODE = AUDIO.get("mode", "auto")               # "auto" ou "scenario"
+AUDIO_SCENARIO = AUDIO.get("scenario", [])
+AUDIO_CONFLIT_DEFAUT = AUDIO.get("conflit_par_defaut", "ecrase")
 
 # Validation immédiate des fichiers audio
 if AUDIO_ACTIF:
@@ -221,12 +224,72 @@ DUREE_SOURCE = _duree_video(INPUT_VIDEO)
 
 # ============================================================
 # 6. Plan d'exécution : liste de séquences à générer
+#
+# Le PLAN est une liste de tuples 4-éléments :
+#     (num_phase, taille, duree_seq, directives)
+# où directives est un dict optionnel pour le mode "scenario", ou None
+# pour le mode "auto" (comportement classique géré par creer_phase).
 # ============================================================
-def construire_plan():
+MODE_PLAN = cfg.get("mode_plan", "auto")
+SCENARIO  = cfg.get("scenario", {})
+
+
+def _resolve_filtre(filtre):
     """
-    Retourne la liste des séquences à générer sous forme :
-       [(num_phase, taille, duree_seq), ...]
+    filtre peut être :
+      - str (nom)         → cherche dans ANOMALIES par nom
+      - int (index 1-based) → ANOMALIES[index-1]
+    Retourne (nom, expr_filtre).
     """
+    if isinstance(filtre, int):
+        idx = filtre - 1
+        if idx < 0 or idx >= len(ANOMALIES):
+            print(f"ERREUR scenario : index de filtre {filtre} hors bornes "
+                  f"(1-{len(ANOMALIES)})")
+            sys.exit(1)
+        return ANOMALIES[idx]
+    for nom, expr in ANOMALIES:
+        if nom == filtre:
+            return (nom, expr)
+    print(f"ERREUR scenario : filtre '{filtre}' introuvable. "
+          f"Disponibles : {[a[0] for a in ANOMALIES]}")
+    sys.exit(1)
+
+
+def _resolve_duree_seq(duree_explicite, duree_par_defaut):
+    if duree_explicite is not None:
+        return float(duree_explicite)
+    if duree_par_defaut == "boucle":
+        return DUREE_SOURCE
+    return float(duree_par_defaut)
+
+
+def _construire_directives(entry):
+    """Construit le dict de directives à partir d'une entrée scenario."""
+    d = {}
+    if "filtre" in entry:
+        d["filtre"] = _resolve_filtre(entry["filtre"])
+    if "anomalies" in entry:
+        d["anomalies"] = int(entry["anomalies"])
+    if entry.get("source") == "video":
+        d["source"] = "video"
+    if "effet" in entry:
+        d["effet"] = entry["effet"]
+    if "masque" in entry:
+        d["masque"] = entry["masque"]
+    if entry.get("aleatoire"):
+        d["aleatoire"] = True
+
+    # Défaut : 1 anomalie dès qu'on précise un filtre/source/aléatoire
+    a_specifie = ("filtre" in d or "source" in d or "aleatoire" in d)
+    if a_specifie and "anomalies" not in d:
+        d["anomalies"] = 1
+
+    return d or None
+
+
+def construire_plan_auto():
+    """Plan classique (comportement avant le mode scenario)."""
     plan = []
 
     if MODE_DUREE == "duree_max":
@@ -237,7 +300,7 @@ def construire_plan():
             duree_restante = DUREE_MAX - cumul
             if duree_restante >= duree_phase:
                 for taille in PHASES:
-                    plan.append((num_phase, taille, DUREE_SOURCE))
+                    plan.append((num_phase, taille, DUREE_SOURCE, None))
                 cumul += duree_phase
                 num_phase += 1
             else:
@@ -245,7 +308,7 @@ def construire_plan():
                     break
                 elif FIN_PARTIELLE == "depasser":
                     for taille in PHASES:
-                        plan.append((num_phase, taille, DUREE_SOURCE))
+                        plan.append((num_phase, taille, DUREE_SOURCE, None))
                     cumul += duree_phase
                     num_phase += 1
                     break
@@ -254,7 +317,7 @@ def construire_plan():
                         if duree_restante <= 0:
                             break
                         d = min(DUREE_SOURCE, duree_restante)
-                        plan.append((num_phase, taille, d))
+                        plan.append((num_phase, taille, d, None))
                         duree_restante -= d
                     break
         return plan
@@ -267,8 +330,56 @@ def construire_plan():
         duree_seq = DUREE_TOTALE / len(PHASES)
 
     for taille in PHASES:
-        plan.append((1, taille, duree_seq))
+        plan.append((1, taille, duree_seq, None))
     return plan
+
+
+def construire_plan_scenario():
+    """
+    Plan défini explicitement par l'utilisateur dans la section `scenario`.
+    Supporte des entrées explicites et des blocs `{ auto: "phase" }` qui
+    déplient une phase classique complète.
+    """
+    duree_par_defaut = SCENARIO.get("duree_par_defaut", "boucle")
+    sequences_cfg = SCENARIO.get("sequences", [])
+    if not sequences_cfg:
+        print("ERREUR : mode_plan='scenario' mais 'scenario.sequences' est vide.")
+        sys.exit(1)
+
+    plan = []
+    num_phase = 1
+
+    for entry in sequences_cfg:
+        # Bloc auto : déplie une phase complète (1 → 2 → 4 → … → MAX)
+        if "auto" in entry and entry["auto"] == "phase":
+            boucles = int(entry.get("boucles", 1))
+            duree_seq = _resolve_duree_seq(entry.get("duree"), duree_par_defaut)
+            for _ in range(boucles):
+                for taille in PHASES:
+                    plan.append((num_phase, taille, duree_seq, None))
+                num_phase += 1
+            continue
+
+        # Séquence explicite
+        taille = entry.get("taille")
+        if taille is None:
+            print(f"ERREUR scenario : séquence sans 'taille' : {entry}")
+            sys.exit(1)
+        duree_seq = _resolve_duree_seq(entry.get("duree"), duree_par_defaut)
+        directives = _construire_directives(entry)
+        plan.append((num_phase, int(taille), duree_seq, directives))
+
+    # En mode scenario on garde un seul num_phase logique sauf si auto a
+    # incrémenté ; on conserve num_phase sur les séquences explicites
+    # (1 par bloc explicite n'aurait pas grand sens).
+    return plan
+
+
+def construire_plan():
+    """Dispatcher selon mode_plan."""
+    if MODE_PLAN == "scenario":
+        return construire_plan_scenario()
+    return construire_plan_auto()
 
 
 PLAN = construire_plan()
@@ -287,7 +398,8 @@ def afficher_resume():
     print(f"Source       : {DUREE_SOURCE:.2f}s")
     print(f"Plan         : {NB_PHASES_PLAN} phase(s), {len(PLAN)} séquences")
     print(f"Durée finale : {DUREE_TOTALE:.1f}s ({DUREE_TOTALE/60:.2f} min)")
-    print(f"Séquences    : {[t*t for _, t, _ in PLAN[:10]]}{'...' if len(PLAN) > 10 else ''}")
+    print(f"Séquences    : {[t*t for _, t, _, _ in PLAN[:10]]}{'...' if len(PLAN) > 10 else ''}")
+    print(f"Mode plan    : {MODE_PLAN}")
     print(f"Mode anomalie     : {MODE_ANOMALIE} | changement: {CHANGEMENT_ANOMALIE}")
     print(f"Filtres actifs    : {len(ANOMALIES)}")
     print(f"Masques activés   : {MASQUES_ACTIFS}"

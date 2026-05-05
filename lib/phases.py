@@ -26,10 +26,90 @@ from .masques import (
 from .effets import phase_utilise_effets, jouer_effet
 
 
+def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
+                          output_path, duree_phase, debut_phase,
+                          directives, cell_w, cell_h, pad_x, pad_y):
+    """
+    Exécute une séquence en mode scenario, à partir des directives explicites.
+    Priorité : effet > masque > anomalies (filtre/source/aleatoire).
+    """
+    n_cellules = taille * taille
+
+    # Effet pleine grille ?
+    if "effet" in directives:
+        jouer_effet(directives["effet"], video_normale, video_anomalie_externe,
+                     taille, debut_phase, duree_phase, output_path,
+                     cell_w, cell_h, pad_x, pad_y)
+        return
+
+    # Masque ad-hoc (chemin d'image fourni explicitement) ?
+    if "masque" in directives:
+        seuil = config.MSK.get("seuil", 128) if isinstance(config.MSK, dict) else 128
+        inverser = config.MSK.get("inverser", False) if isinstance(config.MSK, dict) else False
+        positions = charger_masque_en_positions(directives["masque"], taille,
+                                                  seuil, inverser)
+        print(f"  Masque '{directives['masque']}' : {len(positions)} cellules anomales")
+
+        if "filtre" in directives:
+            anomalies_par_pos = {p: ("filtre", directives["filtre"]) for p in positions}
+        elif directives.get("source") == "video":
+            anomalies_par_pos = {p: ("video", None) for p in positions}
+        else:
+            anomalies_par_pos = tirer_anomalies_pour_positions(positions)
+
+        construire_sous_segment(video_normale, video_anomalie_externe,
+                                 taille, debut_phase, duree_phase, output_path,
+                                 cell_w, cell_h, pad_x, pad_y,
+                                 set(positions), anomalies_par_pos)
+        return
+
+    # Mode "anomalies à des positions tirées au hasard"
+    n_anomalies = directives.get("anomalies", 0)
+    n_anomalies = min(n_anomalies, n_cellules)
+    if n_anomalies <= 0:
+        # Pas d'anomalie : grille normale
+        construire_sous_segment(video_normale, video_anomalie_externe,
+                                 taille, debut_phase, duree_phase, output_path,
+                                 cell_w, cell_h, pad_x, pad_y,
+                                 set(), {})
+        return
+
+    positions = set(random.sample(range(n_cellules), n_anomalies))
+
+    if "filtre" in directives:
+        nom = directives["filtre"][0]
+        print(f"  {n_anomalies} anomalie(s), filtre fixe : {nom}")
+        anomalies_par_pos = {p: ("filtre", directives["filtre"]) for p in positions}
+    elif directives.get("source") == "video":
+        print(f"  {n_anomalies} anomalie(s), source : vidéo externe")
+        anomalies_par_pos = {p: ("video", None) for p in positions}
+    elif directives.get("aleatoire"):
+        print(f"  {n_anomalies} anomalie(s), filtres tirés au hasard")
+        anomalies_par_pos = tirer_anomalies_pour_positions(positions)
+    else:
+        # n_anomalies > 0 mais aucun type spécifié → fallback aléatoire
+        anomalies_par_pos = tirer_anomalies_pour_positions(positions)
+
+    construire_sous_segment(video_normale, video_anomalie_externe,
+                             taille, debut_phase, duree_phase, output_path,
+                             cell_w, cell_h, pad_x, pad_y,
+                             positions, anomalies_par_pos)
+
+
 def creer_phase(video_normale, video_anomalie_externe, taille,
-                output_path, duree_phase, debut_phase):
+                output_path, duree_phase, debut_phase, directives=None):
     n_cellules = taille * taille
     cell_w, cell_h, _, _, pad_x, pad_y = calculer_taille_cellule(taille)
+
+    # Mode scenario : directives explicites prennent le contrôle.
+    if directives is not None:
+        print(f"\n  Phase {taille}x{taille} ({n_cellules} cellules) [SCENARIO]")
+        print(f"  Cellules {cell_w}x{cell_h}, padding ({pad_x},{pad_y})")
+        _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
+                              output_path, duree_phase, debut_phase,
+                              directives, cell_w, cell_h, pad_x, pad_y)
+        return
+
     use_mask = phase_utilise_masque(taille)
     use_effets = phase_utilise_effets(taille)
 

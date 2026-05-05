@@ -235,6 +235,226 @@ def construire_piste_audio(piste_path, segments_durees, video_a_audio_source=Non
         shutil.copy(str(musique_path), str(piste_path))
 
 
+# ============================================================
+# Mode SCENARIO : timeline explicite avec pistes ancrées
+# (phase / sequence / duree / fond) et conflit mix ou écrase.
+# ============================================================
+def _bornes_phase(plan, n):
+    """Bornes absolues [debut, fin] (en s) de la phase n dans le plan."""
+    debut = 0.0
+    fin = None
+    cumul = 0.0
+    for (np, _t, d, _dir) in plan:
+        if np == n and fin is None:
+            debut = cumul
+        cumul += d
+        if np == n:
+            fin = cumul
+    if fin is None:
+        print(f"ERREUR audio scenario : phase {n} introuvable dans le plan")
+        sys.exit(1)
+    return debut, fin
+
+
+def _bornes_sequence(plan, n):
+    """Bornes absolues [debut, fin] de la n-ième séquence (1-based)."""
+    if n < 1 or n > len(plan):
+        print(f"ERREUR audio scenario : sequence {n} hors plan (1-{len(plan)})")
+        sys.exit(1)
+    cumul = 0.0
+    for i, (_np, _t, d, _dir) in enumerate(plan):
+        if i + 1 == n:
+            return cumul, cumul + d
+        cumul += d
+
+
+def _silence(sortie_path, duree):
+    run([
+        "ffmpeg", "-y",
+        "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+        "-t", str(duree),
+        "-c:a", "aac", "-b:a", "192k",
+        str(sortie_path),
+    ])
+
+
+def _construire_timeline_ecrase(pistes_ecrase, duree_totale):
+    """
+    Découpe la timeline en slots non chevauchants. Les pistes plus tardives
+    (dans l'ordre de déclaration) écrasent les plus anciennes sur leur fenêtre.
+    Retourne une liste triée de tuples (debut, fin, piste_ou_None).
+    """
+    slots = [(0.0, duree_totale, None)]
+    for piste in pistes_ecrase:
+        d_p, f_p = piste["debut_abs"], piste["fin_abs"]
+        new_slots = []
+        for s_deb, s_fin, s_piste in slots:
+            # Aucun chevauchement → on garde tel quel
+            if s_fin <= d_p or s_deb >= f_p:
+                new_slots.append((s_deb, s_fin, s_piste))
+                continue
+            # Portion à gauche
+            if s_deb < d_p:
+                new_slots.append((s_deb, d_p, s_piste))
+            # Portion à droite
+            if s_fin > f_p:
+                new_slots.append((f_p, s_fin, s_piste))
+        new_slots.append((d_p, f_p, piste))
+        new_slots.sort()
+        slots = new_slots
+    return slots
+
+
+def _resoudre_fenetre(entry, plan, duree_totale):
+    """Calcule (debut_abs, fin_abs) à partir de l'ancre."""
+    ancre = entry.get("ancre")
+    if ancre == "duree":
+        debut = parser_timestamp(entry["de"])
+        fin = parser_timestamp(entry["a"])
+    elif ancre == "phase":
+        debut, fin = _bornes_phase(plan, int(entry["n"]))
+    elif ancre == "sequence":
+        debut, fin = _bornes_sequence(plan, int(entry["n"]))
+    elif ancre == "fond":
+        debut, fin = 0.0, duree_totale
+    else:
+        print(f"ERREUR audio scenario : ancre inconnue '{ancre}'")
+        sys.exit(1)
+    return debut, fin
+
+
+def construire_piste_audio_scenario(piste_path, plan, scenario_cfg,
+                                     conflit_par_defaut="ecrase"):
+    """
+    Construit la piste audio à partir d'une liste de directives.
+    Chaque entrée : {ancre, fichier, ..., mode: "mix"|"ecrase"}
+    """
+    if not scenario_cfg:
+        print("ERREUR audio scenario : 'audio.scenario' est vide")
+        sys.exit(1)
+
+    duree_totale = sum(p[2] for p in plan)
+
+    # 1. Normalisation des pistes
+    pistes = []
+    for entry in scenario_cfg:
+        debut, fin = _resoudre_fenetre(entry, plan, duree_totale)
+        if fin <= debut:
+            print(f"ERREUR audio scenario : fenêtre vide pour {entry}")
+            sys.exit(1)
+        ancre = entry.get("ancre")
+        # Une piste 'fond' couvre tout et par défaut se mixe.
+        mode_default = "mix" if ancre == "fond" else conflit_par_defaut
+        pistes.append({
+            "fichier": entry["fichier"],
+            "debut_abs": debut,
+            "fin_abs": fin,
+            "debut_extrait": parser_timestamp(entry.get("debut")),
+            "fin_extrait": parser_timestamp(entry.get("fin")),
+            "aleatoire": entry.get("aleatoire", False),
+            "volume": float(entry.get("volume", 1.0)),
+            "mode": entry.get("mode", mode_default),
+            "ancre": ancre,
+        })
+        if not Path(entry["fichier"]).exists():
+            print(f"ERREUR audio scenario : fichier introuvable : {entry['fichier']}")
+            sys.exit(1)
+
+    pistes_ecrase = [p for p in pistes if p["mode"] == "ecrase"]
+    pistes_mix    = [p for p in pistes if p["mode"] == "mix"]
+
+    print(f"  Audio scenario : {len(pistes_ecrase)} piste(s) écrase, "
+          f"{len(pistes_mix)} piste(s) mix, durée totale {duree_totale:.0f}s")
+
+    # 2. Construction de la timeline "écrase" (slots non chevauchants)
+    slots = _construire_timeline_ecrase(pistes_ecrase, duree_totale)
+
+    sub_audios = []
+    for idx, (s_deb, s_fin, s_piste) in enumerate(slots):
+        d = s_fin - s_deb
+        sub_path = config.WORK_DIR / f"audio_slot_{idx:03d}.aac"
+        if s_piste is None:
+            print(f"    [slot {idx}] {s_deb:.1f}-{s_fin:.1f}s : silence")
+            _silence(sub_path, d)
+        else:
+            print(f"    [slot {idx}] {s_deb:.1f}-{s_fin:.1f}s : {s_piste['fichier']}")
+            entree_norm = {
+                "fichier": s_piste["fichier"],
+                "debut": s_piste["debut_extrait"],
+                "fin": s_piste["fin_extrait"],
+                "aleatoire": s_piste["aleatoire"],
+                "duree": None,
+            }
+            preparer_extrait_audio(entree_norm, sub_path, d)
+            # Volume éventuel
+            if s_piste["volume"] != 1.0:
+                sub_vol = config.WORK_DIR / f"audio_slot_{idx:03d}_vol.aac"
+                run([
+                    "ffmpeg", "-y", "-i", str(sub_path),
+                    "-filter:a", f"volume={s_piste['volume']}",
+                    "-c:a", "aac", "-b:a", "192k",
+                    str(sub_vol),
+                ])
+                sub_path = sub_vol
+        sub_audios.append(sub_path)
+
+    # 3. Concaténation des slots → timeline.aac
+    timeline_path = config.WORK_DIR / "audio_timeline.aac"
+    liste = config.WORK_DIR / "liste_audio_scenario.txt"
+    with open(liste, "w") as f:
+        for a in sub_audios:
+            f.write(f"file '{Path(a).resolve()}'\n")
+    run([
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0",
+        "-i", str(liste),
+        "-c", "copy",
+        str(timeline_path),
+    ])
+
+    # 4. Mixage des pistes "mix" par-dessus
+    if not pistes_mix:
+        shutil.copy(str(timeline_path), str(piste_path))
+        return
+
+    print(f"  Mixage de {len(pistes_mix)} piste(s) overlay...")
+    inputs = ["-i", str(timeline_path)]
+    fc_parts = []
+    labels_amix = ["[0:a]"]
+
+    for idx, p in enumerate(pistes_mix):
+        d_piste = p["fin_abs"] - p["debut_abs"]
+        extrait = config.WORK_DIR / f"audio_mix_{idx:02d}.aac"
+        entree_norm = {
+            "fichier": p["fichier"],
+            "debut": p["debut_extrait"],
+            "fin": p["fin_extrait"],
+            "aleatoire": p["aleatoire"],
+            "duree": None,
+        }
+        preparer_extrait_audio(entree_norm, extrait, d_piste)
+        inputs += ["-i", str(extrait)]
+        delai_ms = int(p["debut_abs"] * 1000)
+        fc_parts.append(
+            f"[{idx+1}:a]adelay={delai_ms}|{delai_ms},"
+            f"volume={p['volume']}[m{idx}]"
+        )
+        labels_amix.append(f"[m{idx}]")
+
+    fc_parts.append(
+        f"{''.join(labels_amix)}amix=inputs={len(labels_amix)}"
+        f":duration=first:dropout_transition=0[out]"
+    )
+    run([
+        "ffmpeg", "-y",
+        *inputs,
+        "-filter_complex", ";".join(fc_parts),
+        "-map", "[out]",
+        "-c:a", "aac", "-b:a", "192k",
+        str(piste_path),
+    ])
+
+
 def muxer_audio_video(video_sans_audio, piste_audio, output_path):
     """Mux la vidéo et l'audio sans ré-encoder la vidéo."""
     run([

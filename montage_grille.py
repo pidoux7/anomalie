@@ -24,7 +24,11 @@ from pathlib import Path
 from lib import config
 from lib.grille import preparer_video
 from lib.phases import creer_phase, concatener
-from lib.audio import construire_piste_audio, muxer_audio_video
+from lib.audio import (
+    construire_piste_audio,
+    construire_piste_audio_scenario,
+    muxer_audio_video,
+)
 
 
 def main():
@@ -57,12 +61,12 @@ def main():
     segments = []
     debut = 0.0
     phase_courante = 0
-    for i, (num_phase, taille, duree_seq) in enumerate(config.PLAN):
+    for i, (num_phase, taille, duree_seq, directives) in enumerate(config.PLAN):
         if num_phase != phase_courante:
             print(f"\n--- PHASE {num_phase}/{config.NB_PHASES_PLAN} (nouvelles anomalies) ---")
             phase_courante = num_phase
         seg = config.WORK_DIR / f"phase{num_phase:02d}_seq{i:03d}_t{taille}.mp4"
-        creer_phase(base_full, anomalie_full, taille, seg, duree_seq, debut)
+        creer_phase(base_full, anomalie_full, taille, seg, duree_seq, debut, directives)
         segments.append(seg)
         debut += duree_seq
 
@@ -72,9 +76,14 @@ def main():
         concatener(segments, video_temp)
 
         print("\n=== Étape 4 : ajout de l'audio ===")
-        durees_segments = [p[2] for p in config.PLAN]
         piste_audio = config.WORK_DIR / "piste_audio.aac"
-        construire_piste_audio(piste_audio, durees_segments)
+        if config.AUDIO_MODE == "scenario":
+            construire_piste_audio_scenario(piste_audio, config.PLAN,
+                                              config.AUDIO_SCENARIO,
+                                              config.AUDIO_CONFLIT_DEFAUT)
+        else:
+            durees_segments = [p[2] for p in config.PLAN]
+            construire_piste_audio(piste_audio, durees_segments)
         muxer_audio_video(video_temp, piste_audio, config.OUTPUT_VIDEO)
     else:
         concatener(segments, config.OUTPUT_VIDEO)

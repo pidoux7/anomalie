@@ -43,6 +43,47 @@ fin_partielle: "etendre"
 
 max_cases: 1024                        # carré parfait : 4, 16, 64, 256, 1024, 4096
 
+# ============================================================
+# MODE PLAN — auto (comportement classique) ou scenario (explicite)
+# ============================================================
+# "auto"     : on enchaîne automatiquement les phases (1→2→4→...→MAX)
+#              selon mode_duree, jusqu'à atteindre duree_max.
+# "scenario" : on définit explicitement chaque séquence dans la liste
+#              `scenario.sequences` ci-dessous. On peut mélanger
+#              séquences explicites et blocs `auto: "phase"`.
+mode_plan: "auto"
+
+scenario:
+  # Durée par défaut d'une séquence (utilisée si "duree" n'est pas précisé) :
+  #   "boucle"  : 1 boucle de la vidéo source (= DUREE_SOURCE)
+  #   <nombre>  : durée fixe en secondes
+  duree_par_defaut: "boucle"
+
+  # Liste ordonnée des séquences à générer.
+  # Une entrée "explicite" doit avoir un champ `taille` (1, 2, 4, 8, ...).
+  # Une entrée "auto" déplie une phase complète (1→2→4→...→max_cases).
+  #
+  # Champs d'une séquence explicite :
+  #   taille     : taille de la grille (1, 2, 4, 8, 16, 32, 64, ...)
+  #   anomalies  : nombre de cellules anomales (défaut 1 si filtre/source/aleatoire)
+  #   filtre     : nom (ex: "pixelise") ou index 1-based dans filtres_anomalies
+  #   source     : "video" pour utiliser input_anomalie au lieu d'un filtre
+  #   effet      : "mosaique" | "mur_moniteurs" | "lsd" | "masque" (effet pleine grille)
+  #   masque     : chemin vers une image de masque (ad-hoc, écrase le bloc masques)
+  #   aleatoire  : true pour tirer le filtre au hasard parmi les filtres actifs
+  #   duree      : override la durée de cette séquence (en secondes)
+  sequences:
+    - { taille: 1 }                                          # grille pleine, 0 anomalie
+    - { taille: 4, filtre: "pixelise" }                      # 1 anomalie, filtre nommé
+    - { taille: 4, anomalies: 2, filtre: 3 }                 # 2 anomalies, filtre par index
+    - { taille: 8, anomalies: 5, source: "video" }           # 5 anomalies depuis vidéo externe
+    - { taille: 16, effet: "lsd", duree: 30 }                # effet LSD pendant 30s
+    - { taille: 32, masque: "masques/7.png" }                # masque ad-hoc
+    - { taille: 8, aleatoire: true }                         # 1 anomalie tirée au hasard
+    - { taille: 16, aleatoire: true, anomalies: 4 }          # 4 anomalies tirées au hasard
+    - { auto: "phase" }                                      # 1 phase complète classique
+    - { auto: "phase", boucles: 2 }                          # 2 phases d'affilée
+
 # --- Anomalies (mode classique pour les phases sans masque) ---
 mode_anomalie: "filtres"               # "filtres" | "video" | "mixte"
 changement_anomalie: "phase"           # "phase" | "intervalle" | "fixe"
@@ -82,6 +123,31 @@ performance:
 # ============================================================
 audio:
   actif: true                          # false : vidéo silencieuse comme avant
+
+  # Mode :
+  #   "auto"     : ancien comportement (liste `fichiers` + `comportement`)
+  #   "scenario" : timeline explicite via `scenario` ci-dessous
+  mode: "auto"
+
+  # Comportement par défaut quand 2 pistes scenario se chevauchent :
+  #   "ecrase" : la dernière déclarée prend la fenêtre (la précédente est coupée)
+  #   "mix"    : on additionne les pistes (chacune à son volume)
+  # Surclassable au niveau de chaque piste avec `mode: "mix" | "ecrase"`.
+  conflit_par_defaut: "ecrase"
+
+  # Timeline scenario.
+  # Champs communs : fichier (obligatoire), debut, fin, aleatoire, volume, mode.
+  # Ancres :
+  #   ancre: "phase",    n: <num_phase>            → bornes de la phase n
+  #   ancre: "sequence", n: <num_seq_1based>       → bornes de la séquence n
+  #   ancre: "duree",    de: "0:00", a: "2:30"     → bornes absolues
+  #   ancre: "fond"                                → toute la durée (mix d'office)
+  scenario:
+    # - { ancre: "phase",    n: 1, fichier: "musiques/intro.mp3" }
+    # - { ancre: "sequence", n: 3, fichier: "musiques/break.mp3", debut: "1:00" }
+    # - { ancre: "duree",    de: "0:00", a: "2:30", fichier: "musiques/a.mp3" }
+    # - { ancre: "duree",    de: "2:30", a: "4:00", fichier: "musiques/b.mp3", aleatoire: true }
+    # - { ancre: "fond",     fichier: "musiques/ambient.mp3", volume: 0.3, mode: "mix" }
 
   # Fichier(s) musique.
   # Format simple (ancien) :
