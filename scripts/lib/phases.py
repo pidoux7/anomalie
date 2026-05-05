@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from . import config
-from .commun import run
+from .commun import run, tqdm
 from .grille import (
     calculer_taille_cellule,
     construire_sous_segment,
@@ -322,7 +322,9 @@ def concatener(segments, output_path):
     target_w = config.pair_inf(config.FINAL_W)
     target_h = config.pair_inf(config.FINAL_H)
     segments_norm = []
-    for i, seg in enumerate(segments):
+    print(f"  Normalisation de {len(segments)} segments...")
+    for i, seg in enumerate(tqdm(segments, desc="  norm", unit="seg",
+                                   leave=False)):
         out = config.WORK_DIR / f"norm_{i}.mp4"
         run([
             "ffmpeg", "-y", "-i", str(seg),
@@ -334,6 +336,6 @@ def concatener(segments, output_path):
             "-pix_fmt", "yuv420p",
             "-an",
             str(out)
-        ])
+        ], silent=True)
         segments_norm.append(out)
     concat_segments_simple(segments_norm, output_path)

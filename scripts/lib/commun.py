@@ -9,23 +9,39 @@ import subprocess
 import sys
 
 
-def run(cmd):
-    """Lance un ffmpeg ; logge la commande et arrête tout en cas d'erreur."""
-    print(f">>> {' '.join(cmd[:4])} ...")
+def run(cmd, silent=False):
+    """
+    Lance un ffmpeg ; logge la commande et arrête tout en cas d'erreur.
+    silent=True supprime le ">>> ..." (utile pour les blocs avec tqdm).
+    """
+    if not silent:
+        print(f">>> {' '.join(cmd[:4])} ...")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print("ERREUR ffmpeg :", result.stderr[-1000:])
         sys.exit(1)
 
 
-def run_lenient(cmd):
+def run_lenient(cmd, silent=False):
     """
     Lance un ffmpeg sans interrompre le programme en cas d'erreur.
     Retourne (returncode, stderr). L'appelant décide quoi faire.
     """
-    print(f">>> {' '.join(cmd[:4])} ...")
+    if not silent:
+        print(f">>> {' '.join(cmd[:4])} ...")
     result = subprocess.run(cmd, capture_output=True, text=True)
     return result.returncode, result.stderr
+
+
+# Barre de progression tqdm avec fallback silencieux si non installé
+try:
+    from tqdm import tqdm  # noqa: F401
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
+
+    def tqdm(iterable=None, **kwargs):  # type: ignore  # noqa: F811
+        return iterable if iterable is not None else iter([])
 
 
 def get_duration(path):

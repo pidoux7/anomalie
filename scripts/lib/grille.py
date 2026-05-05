@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from . import config
-from .commun import run, run_lenient, get_duration
+from .commun import run, run_lenient, get_duration, tqdm
 
 
 # ============================================================
@@ -103,7 +103,8 @@ def _publier_dans_cache(source_path, cache_path):
             pass
 
 
-def fabriquer_segment(source, dest, debut, duree, cell_w, cell_h, filtre=None):
+def fabriquer_segment(source, dest, debut, duree, cell_w, cell_h, filtre=None,
+                       silent=False):
     """
     Génère un mini-segment vidéo et le copie au besoin dans le cache.
 
@@ -115,6 +116,9 @@ def fabriquer_segment(source, dest, debut, duree, cell_w, cell_h, filtre=None):
 
     Si un filtre fait planter ffmpeg ou produit un fichier illisible, on
     retombe automatiquement sur la même cellule sans filtre.
+
+    silent=True supprime le ">>> ffmpeg ..." (utile en boucle parallèle
+    où c'est tqdm qui affiche la progression).
     """
     cache_path = None
     if config.CACHE_ACTIF:
@@ -149,7 +153,7 @@ def fabriquer_segment(source, dest, debut, duree, cell_w, cell_h, filtre=None):
     ]
 
     if filtre:
-        rc, err = run_lenient(cmd)
+        rc, err = run_lenient(cmd, silent=silent)
         if rc != 0 or not _fichier_utilisable(dest):
             raison = "ffmpeg a échoué" if rc != 0 else "fichier produit invalide"
             print(f"  [warn] filtre '{filtre}' : {raison} ({cell_w}x{cell_h}) → "
@@ -159,28 +163,32 @@ def fabriquer_segment(source, dest, debut, duree, cell_w, cell_h, filtre=None):
             if Path(dest).exists():
                 Path(dest).unlink()
             return fabriquer_segment(source, dest, debut, duree,
-                                       cell_w, cell_h, filtre=None)
+                                       cell_w, cell_h, filtre=None,
+                                       silent=silent)
     else:
-        run(cmd)
+        run(cmd, silent=silent)
 
     if config.CACHE_ACTIF and cache_path is not None:
         _publier_dans_cache(dest, cache_path)
 
 
-def fabriquer_segments_paralleles(taches):
+def fabriquer_segments_paralleles(taches, desc=None):
     """
     Lance plusieurs fabriquer_segment en parallèle.
     `taches` est une liste de tuples : (source, dest, debut, duree, cw, ch, filtre)
+    `desc` (optionnel) : libellé affiché à gauche de la barre tqdm.
     """
     if config.NB_PARALLEL <= 1 or len(taches) <= 1:
         for t in taches:
             fabriquer_segment(*t)
         return
 
-    print(f"    [parallèle] {len(taches)} tâches sur {config.NB_PARALLEL} threads")
+    label = desc or f"{len(taches)} cellules"
+    print(f"    [parallèle] {label} sur {config.NB_PARALLEL} threads")
     with ThreadPoolExecutor(max_workers=config.NB_PARALLEL) as ex:
-        futures = [ex.submit(fabriquer_segment, *t) for t in taches]
-        for f in as_completed(futures):
+        futures = [ex.submit(fabriquer_segment, *t, silent=True) for t in taches]
+        for f in tqdm(as_completed(futures), total=len(futures),
+                       desc=f"  {label}", unit="cell", leave=False):
             f.result()
 
 
@@ -241,7 +249,7 @@ def assembler_grille(taille, paths_cellules, duree, output_path, pad_x, pad_y):
 def assembler_grille_par_lignes(taille, paths, duree, output_path, pad_x, pad_y):
     print(f"  → Assemblage par lignes ({taille} lignes)")
     lignes = []
-    for r in range(taille):
+    for r in tqdm(range(taille), desc="  hstack lignes", unit="ligne", leave=False):
         ligne_path = config.WORK_DIR / f"ligne_{taille}_{r}_{random.randint(0, 99999)}.mp4"
         ligne_paths = paths[r * taille:(r + 1) * taille]
         ligne_inputs = []
@@ -253,7 +261,7 @@ def assembler_grille_par_lignes(taille, paths, duree, output_path, pad_x, pad_y)
             *config.args_encodage("22"),
             "-pix_fmt", "yuv420p",
             str(ligne_path)
-        ])
+        ], silent=True)
         lignes.append(str(ligne_path))
     final_inputs = []
     for l in lignes:
@@ -351,7 +359,12 @@ def construire_sous_segment(video_normale, video_anomalie_externe,
                         (video_normale, mini, debut, duree, cell_w, cell_h, info_a[1])
                     )
                 else:
-                    debut_ext = random.uniform(0, max(0, duree_externe - duree))
+                    # Seed déterministe par (source, debut, position cellule) :
+                    # ainsi la cellule i d'un palier donné retombe sur le même
+                    # debut_ext entre runs et entre paliers ayant la même
+                    # cellule anomale → cache hit au lieu de N tirages neufs.
+                    rng = random.Random(f"{video_anomalie_externe}|{int(debut)}|{i}")
+                    debut_ext = rng.uniform(0, max(0, duree_externe - duree))
                     taches_anomalies.append(
                         (video_anomalie_externe, mini, debut_ext, duree, cell_w, cell_h, None)
                     )

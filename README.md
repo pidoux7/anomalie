@@ -14,8 +14,11 @@ multi-pistes.
 - Sur macOS : `brew install ffmpeg` (videotoolbox détecté automatiquement)
 
 ```bash
-pip3 install pyyaml pillow
+pip3 install pyyaml pillow tqdm
 ```
+
+`tqdm` est optionnel (barres de progression sur les phases massives).
+Sans `tqdm` installé, le rendu se déroule normalement, juste sans barre.
 
 ## Structure
 
