@@ -1,0 +1,89 @@
+# ============================================================
+# Scenario "sequence" : montée → mosaïque → reprise B → transition
+#                       cellule par cellule → descente
+#
+# Phases :
+#   1. Montée 1×1 → 64×64 sur la vidéo A (input_video par défaut),
+#      anomalies aléatoires.
+#   2. À 64×64 (4096 cellules), mosaïque où la luminance est pilotée
+#      par la vidéo B (carte).
+#   3. Reprise montée 1×1 → 64×64 mais avec la vidéo B en source,
+#      anomalies aléatoires.
+#   4. À 64×64, transition progressive : un nombre croissant de
+#      cellules "redeviennent" la vidéo A (input_anomalie pointe sur A).
+#   5. Descente 64×64 → 1×1 sur la vidéo A.
+#
+# Lancement :
+#     python3 scripts/montage_grille.py scenarios/sequence.yaml
+#
+# !!! Avant de lancer, ajuste `input_anomalie` et `effets.mosaique.video_carte`
+#     pour qu'ils pointent sur ta « vidéo B » réelle. Ici on illustre avec
+#     un placeholder videos/video_b.mp4.
+# ============================================================
+
+output_video: "videos/sequence.mp4"
+
+# input_video reste celui de configs/config.yaml (= vidéo A).
+# input_anomalie sert à la phase 4 : les cellules qui « passent » à la
+# vidéo A pendant la transition viennent de input_anomalie.
+input_anomalie: "videos/IMG_0175.MOV"
+
+# Pour aller jusqu'à 64×64 = 4096 cellules
+max_cases: 4096
+
+# Vidéo B utilisée comme carte de la mosaïque (phase 2)
+effets:
+  mosaique:
+    video_carte: "videos/video_b.mp4"
+
+# On désactive les masques et effets globaux : le scenario contrôle tout
+masques:
+  actif: false
+
+# ============================================================
+# PLAN — scenario explicite
+# ============================================================
+mode_plan: "scenario"
+
+scenario:
+  duree_par_defaut: 10        # secondes par séquence
+  sequences:
+    # ---------- Phase 1 : montée 1→64 sur vidéo A ----------
+    - { taille: 1 }
+    - { taille: 2,  aleatoire: true, anomalies: 1 }
+    - { taille: 4,  aleatoire: true, anomalies: 3 }
+    - { taille: 8,  aleatoire: true, anomalies: 6 }
+    - { taille: 16, aleatoire: true, anomalies: 15 }
+    - { taille: 32, aleatoire: true, anomalies: 50 }
+    - { taille: 64, aleatoire: true, anomalies: 100 }
+
+    # ---------- Phase 2 : mosaïque pleine grille avec vidéo B ----------
+    - { taille: 64, effet: "mosaique", duree: 20 }
+
+    # ---------- Phase 3 : reprise montée 1→64 sur vidéo B ----------
+    - { taille: 1,  video: "videos/video_b.mp4" }
+    - { taille: 2,  video: "videos/video_b.mp4", aleatoire: true, anomalies: 1 }
+    - { taille: 4,  video: "videos/video_b.mp4", aleatoire: true, anomalies: 3 }
+    - { taille: 8,  video: "videos/video_b.mp4", aleatoire: true, anomalies: 6 }
+    - { taille: 16, video: "videos/video_b.mp4", aleatoire: true, anomalies: 15 }
+    - { taille: 32, video: "videos/video_b.mp4", aleatoire: true, anomalies: 50 }
+    - { taille: 64, video: "videos/video_b.mp4", aleatoire: true, anomalies: 100 }
+
+    # ---------- Phase 4 : transition pixel par pixel B → A ----------
+    # 6 paliers de 4s : 200 → 800 → 1800 → 3000 → 4000 → 4090 cellules en vidéo A
+    # (les autres cellules restent en vidéo B)
+    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 200,  duree: 4 }
+    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 800,  duree: 4 }
+    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 1800, duree: 4 }
+    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 3000, duree: 4 }
+    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 4000, duree: 4 }
+    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 4090, duree: 4 }
+
+    # ---------- Phase 5 : descente 64→1 sur vidéo A ----------
+    - { taille: 64, aleatoire: true, anomalies: 100 }
+    - { taille: 32, aleatoire: true, anomalies: 50 }
+    - { taille: 16, aleatoire: true, anomalies: 15 }
+    - { taille: 8,  aleatoire: true, anomalies: 6 }
+    - { taille: 4,  aleatoire: true, anomalies: 3 }
+    - { taille: 2,  aleatoire: true, anomalies: 1 }
+    - { taille: 1 }

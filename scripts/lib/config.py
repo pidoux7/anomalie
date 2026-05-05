@@ -320,7 +320,11 @@ def _construire_directives(entry):
     if a_specifie and "anomalies" not in d:
         d["anomalies"] = 1
 
-    return d or None
+    # Une séquence explicite renvoie toujours un dict (même vide). C'est ce
+    # qui distingue une séquence scenario d'un bloc `auto: "phase"` (qui lui
+    # renvoie None et garde le comportement classique avec masques/effets
+    # globaux).
+    return d
 
 
 def construire_plan_auto():
