@@ -52,11 +52,21 @@ python3 scripts/montage_grille.py
 
 # Avec un scénario (mergé par-dessus configs/config.yaml)
 python3 scripts/montage_grille.py scenarios/scenario_bas.yaml
+
+# Itérer uniquement sur l'audio (réutilise la vidéo du dernier run)
+python3 scripts/montage_grille.py scenarios/scenario_bas.yaml --audio-only
 ```
 
 Le fichier passé en argument est **mergé sur** `configs/config.yaml`
 (deep merge récursif sur les dicts ; les listes sont remplacées).
 Concrètement, un scénario ne contient que les clés à overrider.
+
+**`--audio-only`** : saute la génération vidéo (étapes 1-3) et
+réutilise `travail_montage/video_sans_audio.mp4` du précédent rendu
+complet. Utile pour expérimenter sur les pistes audio sans recalculer
+toute la vidéo (de l'ordre de quelques secondes au lieu de plusieurs
+minutes). Nécessite qu'un rendu complet ait déjà été lancé au moins
+une fois pour la même config (sinon `video_sans_audio.mp4` n'existe pas).
 
 ## Deux modes de plan
 
