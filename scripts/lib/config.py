@@ -445,10 +445,16 @@ def afficher_resume():
     print(f"Mode plan    : {MODE_PLAN}")
     print(f"Mode anomalie     : {MODE_ANOMALIE} | changement: {CHANGEMENT_ANOMALIE}")
     print(f"Filtres actifs    : {len(ANOMALIES)}")
+    # En mode scenario, les masques/effets globaux ne s'appliquent pas
+    # automatiquement : seul ce qui est explicitement déclaré dans
+    # scenario.sequences est joué. On le signale pour éviter la confusion.
+    suffixe_scenario = " (ignoré en mode scenario)" if MODE_PLAN == "scenario" else ""
     print(f"Masques activés   : {MASQUES_ACTIFS}"
-          + (f" ({MSK.get('portee')})" if MASQUES_ACTIFS else ""))
+          + (f" ({MSK.get('portee')})" if MASQUES_ACTIFS else "")
+          + (suffixe_scenario if MASQUES_ACTIFS else ""))
     print(f"Effets activés    : {EFFETS_ACTIFS}"
-          + (f" ({', '.join(EFFETS_LISTE)})" if EFFETS_ACTIFS else ""))
+          + (f" ({', '.join(EFFETS_LISTE)})" if EFFETS_ACTIFS else "")
+          + (suffixe_scenario if EFFETS_ACTIFS else ""))
     print(f"Audio activé      : {AUDIO_ACTIF}"
           + (f" ({AUDIO.get('comportement')}, source={AUDIO.get('audio_source')})" if AUDIO_ACTIF else ""))
     print(f"Encodeur          : {ENCODEUR}"
