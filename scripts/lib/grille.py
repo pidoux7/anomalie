@@ -18,7 +18,7 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import config
-from .commun import run, get_duration
+from .commun import run, run_lenient, get_duration
 
 
 # ============================================================
@@ -77,7 +77,12 @@ def cache_key(source, debut, duree, cell_w, cell_h, filtre):
 # Segments individuels
 # ============================================================
 def fabriquer_segment(source, dest, debut, duree, cell_w, cell_h, filtre=None):
-    """Génère un mini-segment vidéo. Utilise le cache si actif."""
+    """
+    Génère un mini-segment vidéo. Utilise le cache si actif.
+    Si un filtre fait planter ffmpeg (paramètres invalides pour la taille
+    de cellule, syntaxe ffmpeg cassée, etc.), on retombe automatiquement
+    sur la même cellule sans filtre — le rendu reste utilisable.
+    """
     cache_path = None
     if config.CACHE_ACTIF:
         key = cache_key(source, debut, duree, cell_w, cell_h, filtre)
@@ -98,7 +103,7 @@ def fabriquer_segment(source, dest, debut, duree, cell_w, cell_h, filtre=None):
         parts.append(f"scale={cell_w}:{cell_h}")
     parts.append("setsar=1")
     vf = ",".join(parts)
-    run([
+    cmd = [
         "ffmpeg", "-y",
         "-ss", str(debut),
         "-i", str(source),
@@ -107,7 +112,19 @@ def fabriquer_segment(source, dest, debut, duree, cell_w, cell_h, filtre=None):
         *config.args_encodage("22"),
         "-pix_fmt", "yuv420p", "-an",
         str(target)
-    ])
+    ]
+
+    if filtre:
+        # Mode lenient : si le filtre échoue, on retombe sur sans filtre
+        rc, err = run_lenient(cmd)
+        if rc != 0:
+            print(f"  [warn] filtre '{filtre}' a échoué pour {cell_w}x{cell_h}, "
+                  f"fallback sans filtre")
+            print("    ", err.strip().splitlines()[-1] if err.strip() else "")
+            return fabriquer_segment(source, dest, debut, duree, cell_w, cell_h,
+                                       filtre=None)
+    else:
+        run(cmd)
 
     if config.CACHE_ACTIF and target == cache_path:
         shutil.copy(str(cache_path), str(dest))

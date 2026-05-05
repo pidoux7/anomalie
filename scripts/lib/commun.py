@@ -18,6 +18,16 @@ def run(cmd):
         sys.exit(1)
 
 
+def run_lenient(cmd):
+    """
+    Lance un ffmpeg sans interrompre le programme en cas d'erreur.
+    Retourne (returncode, stderr). L'appelant décide quoi faire.
+    """
+    print(f">>> {' '.join(cmd[:4])} ...")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return result.returncode, result.stderr
+
+
 def get_duration(path):
     """Retourne la durée d'un fichier média en secondes (via ffprobe)."""
     result = subprocess.run(

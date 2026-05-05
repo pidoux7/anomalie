@@ -336,9 +336,9 @@ filtres_anomalies:
   - { nom: "rotation_anti",    filtre: "transpose=2", actif: true }
   - { nom: "rotation_continue", filtre: "rotate=t*PI/12:c=black:ow=iw:oh=ih", actif: true }
 
-  - { nom: "flou_extreme",     filtre: "boxblur=40:3", actif: true }
-  - { nom: "flou_gauss_fort",  filtre: "gblur=sigma=20", actif: true }
-  - { nom: "flou_movement",    filtre: "boxblur=2:1:cr=2:1:luma_radius=30", actif: true }
+  - { nom: "flou_extreme",     filtre: "gblur=sigma=15", actif: true }
+  - { nom: "flou_gauss_fort",  filtre: "gblur=sigma=10", actif: true }
+  - { nom: "flou_movement",    filtre: "boxblur=12:1:6:1", actif: true }
 
   - { nom: "edgedetect_wires", filtre: "edgedetect=mode=wires:low=0.1:high=0.4", actif: true }
   - { nom: "edgedetect_canny", filtre: "edgedetect=mode=canny:low=0.1:high=0.4", actif: true }
