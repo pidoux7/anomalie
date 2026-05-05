@@ -31,10 +31,14 @@ input_anomalie: "videos/IMG_0175.MOV"
 # Pour aller jusqu'à 64×64 = 4096 cellules
 max_cases: 4096
 
-# Vidéo B utilisée comme carte de la mosaïque (phase 2)
+# Vidéo B utilisée comme carte de la mosaïque (phase 2).
+# preserve_couleur : la luma de la carte module la luminosité, mais la
+# grille garde ses couleurs d'origine (pas de teinte verte parasite).
 effets:
   mosaique:
     video_carte: "videos/video_b.mp4"
+    mode_fusion: "preserve_couleur"
+    intensite: 0.7                     # 0 = aucune modulation, 1 = forte
 
 # On désactive les masques et effets globaux : le scenario contrôle tout
 masques:

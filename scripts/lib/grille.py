@@ -359,12 +359,17 @@ def construire_sous_segment(video_normale, video_anomalie_externe,
                         (video_normale, mini, debut, duree, cell_w, cell_h, info_a[1])
                     )
                 else:
-                    # Seed déterministe par (source, debut, position cellule) :
-                    # ainsi la cellule i d'un palier donné retombe sur le même
-                    # debut_ext entre runs et entre paliers ayant la même
-                    # cellule anomale → cache hit au lieu de N tirages neufs.
-                    rng = random.Random(f"{video_anomalie_externe}|{int(debut)}|{i}")
-                    debut_ext = rng.uniform(0, max(0, duree_externe - duree))
+                    # Le seed ne dépend que de (source, position cellule) :
+                    # offset_base est donc constant pour la cellule i entre
+                    # tous les paliers d'une même phase. On ajoute `debut`
+                    # (timestamp absolu de la séquence dans le plan) modulo
+                    # la plage utile, ce qui fait progresser la cellule
+                    # temporellement dans la vidéo externe au lieu de sauter
+                    # à un offset aléatoire à chaque palier.
+                    plage = max(1.0, duree_externe - duree)
+                    rng = random.Random(f"{video_anomalie_externe}|{i}")
+                    offset_base = rng.uniform(0, plage)
+                    debut_ext = (offset_base + debut) % plage
                     taches_anomalies.append(
                         (video_anomalie_externe, mini, debut_ext, duree, cell_w, cell_h, None)
                     )
