@@ -16,6 +16,7 @@ import os
 import random
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 from . import config
 from .commun import run, run_lenient, get_duration
@@ -103,24 +104,38 @@ def fabriquer_segment(source, dest, debut, duree, cell_w, cell_h, filtre=None):
         parts.append(f"scale={cell_w}:{cell_h}")
     parts.append("setsar=1")
     vf = ",".join(parts)
+    # -r 30 / -fps_mode cfr : force un timing fixe en sortie, indépendant
+    # des filtres manipulant les PTS (setpts, framestep, etc.) qui sinon
+    # peuvent produire des fichiers vides ou très courts.
     cmd = [
         "ffmpeg", "-y",
         "-ss", str(debut),
         "-i", str(source),
         "-t", str(duree),
         "-vf", vf,
+        "-r", "30", "-fps_mode", "cfr",
         *config.args_encodage("22"),
         "-pix_fmt", "yuv420p", "-an",
         str(target)
     ]
 
+    def _fichier_utilisable(path):
+        """Un fichier mp4 valide fait au moins ~2 KB (header + 1 frame)."""
+        return Path(path).exists() and Path(path).stat().st_size > 2048
+
     if filtre:
-        # Mode lenient : si le filtre échoue, on retombe sur sans filtre
+        # Mode lenient : si le filtre échoue OU produit un fichier vide,
+        # on retombe sur la même cellule sans filtre.
         rc, err = run_lenient(cmd)
-        if rc != 0:
-            print(f"  [warn] filtre '{filtre}' a échoué pour {cell_w}x{cell_h}, "
+        if rc != 0 or not _fichier_utilisable(target):
+            raison = "ffmpeg a échoué" if rc != 0 else "fichier produit invalide"
+            print(f"  [warn] filtre '{filtre}' : {raison} ({cell_w}x{cell_h}) → "
                   f"fallback sans filtre")
-            print("    ", err.strip().splitlines()[-1] if err.strip() else "")
+            if rc != 0 and err.strip():
+                print(f"    {err.strip().splitlines()[-1]}")
+            # Nettoie le fichier partiel pour ne pas polluer le cache
+            if Path(target).exists():
+                Path(target).unlink()
             return fabriquer_segment(source, dest, debut, duree, cell_w, cell_h,
                                        filtre=None)
     else:
