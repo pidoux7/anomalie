@@ -71,13 +71,14 @@ scenario:
 
     # ---------- Phase 4 : transition pixel par pixel B → A ----------
     # 6 paliers de 4s : 200 → 800 → 1800 → 3000 → 4000 → 4090 cellules en vidéo A
-    # (les autres cellules restent en vidéo B)
+    # cumulatif: true → les pixels d'un palier précédent restent figés ;
+    # seules de nouvelles cellules s'ajoutent à chaque palier.
     - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 200,  duree: 4 }
-    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 800,  duree: 4 }
-    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 1800, duree: 4 }
-    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 3000, duree: 4 }
-    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 4000, duree: 4 }
-    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 4090, duree: 4 }
+    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 800,  duree: 4, cumulatif: true }
+    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 1800, duree: 4, cumulatif: true }
+    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 3000, duree: 4, cumulatif: true }
+    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 4000, duree: 4, cumulatif: true }
+    - { taille: 64, video: "videos/video_b.mp4", source: "video", anomalies: 4090, duree: 4, cumulatif: true }
 
     # ---------- Phase 5 : descente 64→1 sur vidéo A ----------
     - { taille: 64, aleatoire: true, anomalies: 100 }

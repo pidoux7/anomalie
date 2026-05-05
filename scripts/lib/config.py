@@ -314,6 +314,10 @@ def _construire_directives(entry):
         d["video"] = entry["video"]
     if entry.get("aleatoire"):
         d["aleatoire"] = True
+    if entry.get("cumulatif"):
+        # Conserve les positions anomales du palier précédent à la même
+        # taille, puis n'en ajoute que de nouvelles pour atteindre `anomalies`.
+        d["cumulatif"] = True
 
     # Défaut : 1 anomalie dès qu'on précise un filtre/source/aléatoire
     a_specifie = ("filtre" in d or "source" in d or "aleatoire" in d)

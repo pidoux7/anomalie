@@ -100,7 +100,16 @@ def creer_effet_mosaique(video_source, taille, debut_source, duree,
     ])
 
     print(f"    [mosaique] fusion ({mode_fusion}, intensité={intensite})...")
-    if intensite < 1.0:
+    if mode_fusion == "preserve_couleur":
+        # Mode "preserve_couleur" : on désature la carte (luma seulement)
+        # et on blend en overlay → la grille garde ses couleurs d'origine,
+        # seule la luminosité varie selon la carte. Évite la teinte verte
+        # quand la carte a une dominante de couleur.
+        fc = (
+            f"[1:v]hue=s=0,eq=contrast={0.5+0.5*intensite}[carte_lum];"
+            f"[0:v][carte_lum]blend=all_mode=overlay:all_opacity={intensite}[v]"
+        )
+    elif intensite < 1.0:
         fc = (
             f"[1:v]eq=brightness={(1-intensite)*0.3}:contrast={intensite}[carte_mod];"
             f"[0:v][carte_mod]blend=all_mode={mode_fusion}[v]"
@@ -197,14 +206,16 @@ def creer_effet_lsd(video_source, taille, debut_source, duree,
     """
     cfg_l = config.EFFETS.get("lsd", {})
     amp = float(cfg_l.get("amplitude_onde", 120))
-    vit = float(cfg_l.get("vitesse_onde", 0.8))
+    vit = float(cfg_l.get("vitesse_onde", 0.4))           # ↓ moins rythmé par défaut
     freq = float(cfg_l.get("frequence_onde", 8))
     aber = int(cfg_l.get("aberration", 8))
     sat = float(cfg_l.get("saturation", 2.5))
     teinte = float(cfg_l.get("teinte", 240))
+    bruit = float(cfg_l.get("bruit", 30))                  # 0 = aucun, 60+ = très grainé
     lignes_force = float(cfg_l.get("lignes_force", 0.7))
     lignes_mode = cfg_l.get("lignes_mode", "edges")
 
+    grid_w = cell_w * taille
     grid_h = cell_h * taille
 
     print(f"    [lsd] préparation grille...")
@@ -218,17 +229,37 @@ def creer_effet_lsd(video_source, taille, debut_source, duree,
     else:
         assembler_grille(taille, paths, duree, grille_base, 0, 0)
 
-    print(f"    [lsd] application effets (amp={amp}, sat={sat}, teinte={teinte})...")
+    print(f"    [lsd] application effets (amp={amp}, sat={sat}, teinte={teinte}, bruit={bruit})...")
 
     parts = []
     parts.append(f"[0:v]hue=h={teinte}:s={sat}[col]")
     parts.append(f"[col]rgbashift=rh={aber}:bh=-{aber}:rv=-{aber//2}:bv={aber//2}[abr]")
-    expr_x = f"X+{amp}*sin(Y/{max(1,grid_h/freq):.3f}+T*{vit*6.28:.3f})"
+
+    # Bruit film (uniforme + temporel) appliqué avant la déformation pour
+    # créer un grain qui se déforme avec le reste.
+    if bruit > 0:
+        parts.append(f"[abr]noise=alls={bruit}:allf=t+u[abr2]")
+        last_label = "abr2"
+    else:
+        last_label = "abr"
+
+    # Déformation 2D non-uniforme :
+    # - L'amplitude horizontale varie selon X (zones plus déformées que d'autres).
+    # - Une déformation verticale plus douce s'ajoute (cosinus en fonction de X+T).
+    # Résultat : ondulations moins synchronisées sur toute l'image.
+    expr_x = (
+        f"X+{amp}*sin(Y/{max(1,grid_h/freq):.3f}+T*{vit*6.28:.3f})"
+        f"*(0.5+0.5*sin(X/{max(1,grid_w/3):.0f}+T*{vit*2.5:.3f}))"
+    )
+    expr_y = (
+        f"Y+{amp/3}*cos(X/{max(1,grid_w/(freq*0.7)):.3f}"
+        f"+T*{vit*4.5:.3f})"
+    )
     parts.append(
-        f"[abr]geq="
-        f"r='r({expr_x},Y)':"
-        f"g='g({expr_x},Y)':"
-        f"b='b({expr_x},Y)'"
+        f"[{last_label}]geq="
+        f"r='r({expr_x},{expr_y})':"
+        f"g='g({expr_x},{expr_y})':"
+        f"b='b({expr_x},{expr_y})'"
         f"[wave]"
     )
     if lignes_force > 0:

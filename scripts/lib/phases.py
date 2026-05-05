@@ -26,6 +26,12 @@ from .masques import (
 from .effets import phase_utilise_effets, jouer_effet
 
 
+# État partagé pour le mode `cumulatif` : positions anomales conservées
+# entre séquences successives. Clé = taille de la grille (les cumulatifs
+# ne sont pertinents qu'entre paliers de même taille).
+_etat_cumulatif = {}  # taille -> set[int]
+
+
 def _resoudre_video_source(directives, video_par_defaut, debut_par_defaut):
     """
     Détermine la vidéo source de la séquence selon directives['video'] :
@@ -105,7 +111,23 @@ def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
                                  set(), {})
         return
 
-    positions = set(random.sample(range(n_cellules), n_anomalies))
+    # Tirage des positions : cumulatif ou aléatoire neuf
+    if directives.get("cumulatif"):
+        deja = _etat_cumulatif.get(taille, set())
+        if len(deja) >= n_anomalies:
+            # On ne réduit jamais ; on garde simplement les déjà présentes.
+            positions = set(list(deja)[:n_anomalies])
+        else:
+            disponibles = [i for i in range(n_cellules) if i not in deja]
+            a_ajouter = min(n_anomalies - len(deja), len(disponibles))
+            nouvelles = set(random.sample(disponibles, a_ajouter))
+            positions = deja | nouvelles
+        _etat_cumulatif[taille] = positions
+        print(f"  Cumulatif : {len(deja)} conservées + "
+              f"{len(positions) - len(deja)} ajoutées = {len(positions)}")
+    else:
+        positions = set(random.sample(range(n_cellules), n_anomalies))
+        _etat_cumulatif[taille] = positions
 
     if "filtre" in directives:
         nom = directives["filtre"][0]

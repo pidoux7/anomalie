@@ -127,7 +127,7 @@ audio:
   # Mode :
   #   "auto"     : ancien comportement (liste `fichiers` + `comportement`)
   #   "scenario" : timeline explicite via `scenario` ci-dessous
-  mode: "auto"
+  mode: "scenario"
 
   # Comportement par défaut quand 2 pistes scenario se chevauchent :
   #   "ecrase" : la dernière déclarée prend la fenêtre (la précédente est coupée)
@@ -161,19 +161,19 @@ audio:
   #     → format hh:mm:ss aussi accepté
   #   - { fichier: "musiques/musique.mp3", aleatoire: true, duree: 60 }
   #     → tire au sort un point de départ, prend 60s à partir de là
-  #   - { fichier: "musiques/musique.mp3" }
+  - { fichier: "musiques/spiral.mp3" }
   #     → utilise le fichier entier (du début à la fin)
   fichiers:
-    # - "musiques/spiral.mp3"
+    - "musiques/spiral.mp3"
     # Exemples (décommente pour utiliser) :
-    - { fichier: "musiques/spiral.mp3", debut: "2:00" }
+    #- { fichier: "musiques/spiral.mp3", debut: "2:00" }
     # - { fichier: "musiques/album.mp3", debut: "1:30", fin: "4:15" }
     # - { fichier: "musiques/album.mp3", aleatoire: true, duree: 120 }
 
   # Comportement à chaque changement de phase :
   #   "reset"    : la musique reprend du début à chaque nouvelle phase
   #   "continu"  : la musique tourne en boucle continue, ignore les changements
-  comportement: "reset"
+  comportement: "continu"
 
   # Comportement à chaque sous-segment (intervalle ou masque sequence/apparition)
   comportement_sous_segment: "continu"
@@ -183,7 +183,7 @@ audio:
   audio_source: "couper"
 
   # Volumes (1.0 = normal)
-  volume_musique: 0.7
+  volume_musique: 1.0
   volume_source: 1.0                   # ignoré quand audio_source="couper"
 
   # Fondus en début et fin de vidéo
@@ -240,9 +240,12 @@ effets:
     # Intensité de la modulation (0 = aucune, 1 = totale)
     intensite: 1.0
     # Mode de fusion :
-    #   "multiply"  : la carte assombrit (effet luminance, classique)
-    #   "screen"    : la carte éclaircit (effet inverse)
-    #   "overlay"   : mix des deux selon luminance
+    #   "multiply"          : la carte assombrit (effet luminance classique)
+    #   "screen"            : la carte éclaircit (effet inverse)
+    #   "overlay"           : mix des deux selon luminance
+    #   "preserve_couleur"  : la carte est désaturée et superposée en overlay,
+    #                         la grille garde ses couleurs d'origine
+    #                         (à privilégier si la carte a une dominante de couleur)
     mode_fusion: "multiply"
 
   # ============ CONFIG MUR DE MONITEURS ============
@@ -266,8 +269,8 @@ effets:
     # Amplitude des ondulations (en pixels). Plus élevé = plus de déformation.
     # 0 = pas d'ondulation, 50-200 = visible, 300+ = extrême
     amplitude_onde: 120
-    # Vitesse des ondulations (cycles par seconde)
-    vitesse_onde: 0.8
+    # Vitesse des ondulations (cycles par seconde, 0.3-0.5 = doux, 1+ = rapide)
+    vitesse_onde: 0.4
     # Fréquence spatiale (nombre d'ondes visibles à l'écran)
     frequence_onde: 8
     # Intensité de l'aberration chromatique (décalage des canaux R/G/B)
@@ -276,6 +279,8 @@ effets:
     saturation: 2.5
     # Décalage de teinte (0-360°). 240 = bleu/violet comme la photo
     teinte: 240
+    # Bruit film (0 = aucun, 30 = grain léger, 60+ = très grainé)
+    bruit: 30
     # Force des lignes de contour (0 = aucune, 1.0 = maximum)
     lignes_force: 0.7
     # Mode du contour : "edges" (lignes nettes) ou "wires" (lignes fines)
