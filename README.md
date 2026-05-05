@@ -19,7 +19,7 @@ pip3 install pyyaml pillow
 
 ## Structure
 
-```
+```text
 anomalie/
 ├── configs/         # config.yaml (réglages de base, partagés)
 ├── scenarios/       # fichiers scenario qui héritent de configs/config.yaml
@@ -86,16 +86,16 @@ scenario:
 
 **Champs d'une séquence :**
 
-| Champ       | Effet                                                                |
-|-------------|----------------------------------------------------------------------|
-| `taille`    | Taille de la grille (1, 2, 4, 8, 16, …)                              |
-| `anomalies` | Nombre de cellules anomales (défaut 1 si filtre/source/aleatoire)    |
+| Champ       | Effet                                                                    |
+|-------------|--------------------------------------------------------------------------|
+| `taille`    | Taille de la grille (1, 2, 4, 8, 16, …)                                  |
+| `anomalies` | Nombre de cellules anomales (défaut 1 si filtre/source/aleatoire)        |
 | `filtre`    | Nom (ex `"pixelise_fort"`) **ou** index 1-based dans `filtres_anomalies` |
-| `source`    | `"video"` pour utiliser `input_anomalie` au lieu d'un filtre         |
-| `effet`     | `"mosaique"` \| `"mur_moniteurs"` \| `"lsd"` \| `"masque"`           |
-| `masque`    | Chemin d'image (motif dessiné par les cellules anomales)             |
-| `aleatoire` | `true` pour tirer le filtre au hasard parmi les filtres actifs       |
-| `duree`     | Override la durée de la séquence (en secondes)                       |
+| `source`    | `"video"` pour utiliser `input_anomalie` au lieu d'un filtre             |
+| `effet`     | `"mosaique"` \| `"mur_moniteurs"` \| `"lsd"` \| `"masque"`               |
+| `masque`    | Chemin d'image (motif dessiné par les cellules anomales)                 |
+| `aleatoire` | `true` pour tirer le filtre au hasard parmi les filtres actifs           |
+| `duree`     | Override la durée de la séquence (en secondes)                           |
 
 ## Audio
 
@@ -128,6 +128,7 @@ audio:
 | `fond`     | Toute la durée totale (mode `mix` par défaut)                   |
 
 **Conflit entre pistes** :
+
 - `mode: "ecrase"` : la dernière piste déclarée prend la fenêtre, les
   précédentes sont coupées sur cet intervalle ; les trous restants sont
   remplis avec du silence.
@@ -139,16 +140,109 @@ sur la piste.
 
 ## Effets pleine grille
 
-Activables via `effets.actif: true` (mode auto) ou `effet: "<nom>"` dans
-une séquence scenario.
+Quatre effets couvrent toute la grille (par opposition aux anomalies par
+cellule). On les appelle de **deux manières** :
 
-- **`mosaique`** : la grille reproduit une autre vidéo (carte) où chaque
-  cellule joue la source modulée par le pixel correspondant de la carte.
-- **`mur_moniteurs`** : chaque cellule joue une vidéo différente tirée
-  parmi `effets.mur_moniteurs.videos`.
-- **`lsd`** : grille classique + distorsion ondulatoire + aberration
-  chromatique + saturation + détection de contours.
-- **`masque`** : redirige vers le système de masque (image → positions).
+- **Mode auto** : `effets.actif: true`, on liste les effets dans
+  `effets.liste`, ils s'enchaînent automatiquement sur les phases
+  ciblées par `effets.portee`/`effets.seuil_cases`.
+- **Mode scenario** : `effet: "<nom>"` dans une séquence
+  `scenario.sequences` (override la phase entière).
+
+| Effet            | Description                                                                  |
+|------------------|------------------------------------------------------------------------------|
+| `mosaique`       | Grille modulée par une vidéo "carte" (luminance pixel = luminance cellule)   |
+| `mur_moniteurs`  | Chaque cellule joue une vidéo différente tirée d'une liste                   |
+| `lsd`            | Grille + distorsion ondulatoire + aberration chromatique + saturation        |
+| `masque`         | Les cellules anomales dessinent un motif depuis une image (cf. ci-dessous)   |
+
+### `mosaique`
+
+Paramètres (sous `effets.mosaique` dans `configs/config.yaml`) :
+
+| Clé                    | Effet                                                              |
+|------------------------|--------------------------------------------------------------------|
+| `video_carte`          | Chemin de la vidéo qui sert de carte de luminance                  |
+| `debut` / `fin`        | Bornes dans la carte (`mm:ss`, `hh:mm:ss` ou secondes)             |
+| `boucler_carte`        | Si la carte est plus courte que l'effet, la boucle                 |
+| `carte_en_noir_blanc`  | Force la carte en N&B avant modulation                             |
+| `intensite`            | 0.0 (pas d'effet) → 1.0 (modulation pleine)                        |
+| `mode_fusion`          | `"multiply"` (assombrit) \| `"screen"` (éclaircit) \| `"overlay"`  |
+
+```yaml
+# Mode auto : ajouter à la liste
+effets:
+  liste: ["mosaique"]
+
+# Mode scenario : sur une séquence
+sequences:
+  - { taille: 32, effet: "mosaique" }                  # 1 boucle source
+  - { taille: 32, effet: "mosaique", duree: 60 }       # 60s
+```
+
+### `mur_moniteurs`
+
+Paramètres (sous `effets.mur_moniteurs`) :
+
+| Clé                  | Effet                                                                  |
+|----------------------|------------------------------------------------------------------------|
+| `videos`             | Liste de chemins vidéo tirés au sort par cellule                       |
+| `decalage_aleatoire` | `true` = chaque cellule démarre à un point aléatoire dans son clip     |
+| `inclure_source`     | `true` = la source principale est ajoutée au tirage                    |
+
+```yaml
+sequences:
+  - { taille: 32, effet: "mur_moniteurs", duree: 30 }
+```
+
+### `lsd`
+
+Paramètres (sous `effets.lsd`) :
+
+| Clé              | Effet                                                                  |
+|------------------|------------------------------------------------------------------------|
+| `amplitude_onde` | Amplitude des ondulations en pixels (0 = aucune, 50-200 = visible)     |
+| `vitesse_onde`   | Vitesse des ondulations (cycles par seconde)                           |
+| `frequence_onde` | Nombre d'ondes visibles à l'écran                                      |
+| `aberration`     | Décalage des canaux R/B en pixels (aberration chromatique)             |
+| `saturation`     | 1.0 (normal) → 3.0 (très saturé)                                       |
+| `teinte`         | Décalage de teinte en degrés (240 = bleu/violet)                       |
+| `lignes_force`   | Force des contours superposés (0 = aucun, 1.0 = max)                   |
+| `lignes_mode`    | `"edges"` (lignes nettes) \| `"wires"` (lignes fines)                  |
+
+```yaml
+sequences:
+  - { taille: 16, effet: "lsd", duree: 20 }
+```
+
+### `masque`
+
+Voir la section [Masques](#masques) ci-dessous. Quand utilisé comme effet
+dans une séquence scenario, le motif est piloté par le bloc `masques:`
+(images, mode_filtre, evolution…). Pour fournir un masque ad-hoc à une
+seule séquence (sans toucher au bloc global), utilise le champ
+`masque:` directement :
+
+```yaml
+sequences:
+  - { taille: 32, masque: "masques/coeur.png" }                     # masque ad-hoc
+  - { taille: 32, masque: "masques/7.png", filtre: "negatif" }      # + filtre fixe
+```
+
+### Enchaîner plusieurs effets en mode auto
+
+```yaml
+effets:
+  actif: true
+  liste: ["mosaique", "mur_moniteurs", "lsd"]
+  durees:
+    mosaique: 30           # secondes
+    mur_moniteurs: 20
+    lsd: null              # null = 1 boucle source
+```
+
+Chaque effet devient une sous-séquence dans les phases ciblées. Tu peux
+dupliquer un nom dans `liste` pour le faire passer plusieurs fois.
 
 ## Masques
 
