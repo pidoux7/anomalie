@@ -29,14 +29,46 @@ except ImportError:
 
 # ============================================================
 # 1. Lecture du YAML
+#
+# La config de base `configs/config.yaml` est toujours chargée. Si un autre
+# fichier est passé en argument (typiquement un scénario), il est mergé
+# par-dessus la base (deep merge récursif sur les dicts ; les listes sont
+# remplacées).
 # ============================================================
-config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/config.yaml"
-if not Path(config_path).exists():
-    print(f"Config introuvable : {config_path}")
+BASE_CONFIG = "configs/config.yaml"
+
+
+def _deep_merge(base, override):
+    """Merge récursif. Les listes sont remplacées (pas concaténées)."""
+    if not isinstance(base, dict) or not isinstance(override, dict):
+        return override
+    out = dict(base)
+    for k, v in override.items():
+        if k in out and isinstance(out[k], dict) and isinstance(v, dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+config_path = sys.argv[1] if len(sys.argv) > 1 else BASE_CONFIG
+
+if not Path(BASE_CONFIG).exists():
+    print(f"Config de base introuvable : {BASE_CONFIG}")
     sys.exit(1)
 
-with open(config_path, "r") as f:
-    cfg = yaml.safe_load(f)
+with open(BASE_CONFIG, "r") as f:
+    cfg = yaml.safe_load(f) or {}
+
+# Merge éventuel d'un fichier override (scenario, profil alternatif…)
+if Path(config_path).resolve() != Path(BASE_CONFIG).resolve():
+    if not Path(config_path).exists():
+        print(f"Fichier introuvable : {config_path}")
+        sys.exit(1)
+    with open(config_path, "r") as f:
+        cfg_override = yaml.safe_load(f) or {}
+    cfg = _deep_merge(cfg, cfg_override)
+    print(f"[config] base={BASE_CONFIG} + override={config_path}")
 
 INPUT_VIDEO    = cfg["input_video"]
 INPUT_ANOMALIE = cfg.get("input_anomalie")
