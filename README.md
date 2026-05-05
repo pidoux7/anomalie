@@ -94,8 +94,21 @@ scenario:
 | `source`    | `"video"` pour utiliser `input_anomalie` au lieu d'un filtre             |
 | `effet`     | `"mosaique"` \| `"mur_moniteurs"` \| `"lsd"` \| `"masque"`               |
 | `masque`    | Chemin d'image (motif dessiné par les cellules anomales)                 |
+| `video`     | Chemin (str) **ou** liste (tirage aléatoire) — override `input_video`    |
 | `aleatoire` | `true` pour tirer le filtre au hasard parmi les filtres actifs           |
 | `duree`     | Override la durée de la séquence (en secondes)                           |
+
+**Note `video`** : disponible uniquement en mode scenario. Si absent, la
+séquence utilise `input_video` (config globale). Si présent, la vidéo
+dédiée joue **depuis le début** (le seek cumulé du plan ne s'applique
+pas à une autre source).
+
+```yaml
+sequences:
+  - { taille: 8, video: "videos/clip2.mp4" }                              # vidéo unique
+  - { taille: 8, video: ["videos/a.mp4", "videos/b.mp4", "videos/c.mp4"]} # tirage aléatoire
+  - { taille: 8 }                                                          # input_video par défaut
+```
 
 ## Audio
 
@@ -272,4 +285,4 @@ forcer un recalcul, supprimer ce dossier.
 
 ## Licence
 
-[MIT](LICENSE) © 2026 Guillaume Faure
+[MIT](LICENSE) © 2026 Guillaume Faure et Alban Tardif

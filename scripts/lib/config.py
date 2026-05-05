@@ -309,6 +309,9 @@ def _construire_directives(entry):
         d["effet"] = entry["effet"]
     if "masque" in entry:
         d["masque"] = entry["masque"]
+    if "video" in entry:
+        # Chaîne (chemin unique) ou liste (tirage aléatoire au runtime)
+        d["video"] = entry["video"]
     if entry.get("aleatoire"):
         d["aleatoire"] = True
 

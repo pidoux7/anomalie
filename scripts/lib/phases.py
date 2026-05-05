@@ -26,6 +26,31 @@ from .masques import (
 from .effets import phase_utilise_effets, jouer_effet
 
 
+def _resoudre_video_source(directives, video_par_defaut, debut_par_defaut):
+    """
+    Détermine la vidéo source de la séquence selon directives['video'] :
+      - absent       → (video_par_defaut, debut_par_defaut)
+      - chaîne       → (chemin, 0)
+      - liste de chaînes → tirage aléatoire (chaque exécution rejoue le tirage)
+    Pour une vidéo dédiée, on repart à 0 (l'offset cumulé du plan ne s'applique
+    pas à une autre vidéo).
+    """
+    if "video" not in directives:
+        return video_par_defaut, debut_par_defaut
+
+    v = directives["video"]
+    if isinstance(v, list):
+        if not v:
+            print("ERREUR scenario : 'video' est une liste vide")
+            sys.exit(1)
+        v = random.choice(v)
+    if not Path(v).exists():
+        print(f"ERREUR scenario : vidéo introuvable : {v}")
+        sys.exit(1)
+    print(f"  Vidéo source dédiée : {v}")
+    return v, 0.0
+
+
 def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
                           output_path, duree_phase, debut_phase,
                           directives, cell_w, cell_h, pad_x, pad_y):
@@ -34,11 +59,12 @@ def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
     Priorité : effet > masque > anomalies (filtre/source/aleatoire).
     """
     n_cellules = taille * taille
+    video_eff, debut_eff = _resoudre_video_source(directives, video_normale, debut_phase)
 
     # Effet pleine grille ?
     if "effet" in directives:
-        jouer_effet(directives["effet"], video_normale, video_anomalie_externe,
-                     taille, debut_phase, duree_phase, output_path,
+        jouer_effet(directives["effet"], video_eff, video_anomalie_externe,
+                     taille, debut_eff, duree_phase, output_path,
                      cell_w, cell_h, pad_x, pad_y)
         return
 
@@ -57,8 +83,8 @@ def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
         else:
             anomalies_par_pos = tirer_anomalies_pour_positions(positions)
 
-        construire_sous_segment(video_normale, video_anomalie_externe,
-                                 taille, debut_phase, duree_phase, output_path,
+        construire_sous_segment(video_eff, video_anomalie_externe,
+                                 taille, debut_eff, duree_phase, output_path,
                                  cell_w, cell_h, pad_x, pad_y,
                                  set(positions), anomalies_par_pos)
         return
@@ -68,8 +94,8 @@ def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
     n_anomalies = min(n_anomalies, n_cellules)
     if n_anomalies <= 0:
         # Pas d'anomalie : grille normale
-        construire_sous_segment(video_normale, video_anomalie_externe,
-                                 taille, debut_phase, duree_phase, output_path,
+        construire_sous_segment(video_eff, video_anomalie_externe,
+                                 taille, debut_eff, duree_phase, output_path,
                                  cell_w, cell_h, pad_x, pad_y,
                                  set(), {})
         return
@@ -90,8 +116,8 @@ def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
         # n_anomalies > 0 mais aucun type spécifié → fallback aléatoire
         anomalies_par_pos = tirer_anomalies_pour_positions(positions)
 
-    construire_sous_segment(video_normale, video_anomalie_externe,
-                             taille, debut_phase, duree_phase, output_path,
+    construire_sous_segment(video_eff, video_anomalie_externe,
+                             taille, debut_eff, duree_phase, output_path,
                              cell_w, cell_h, pad_x, pad_y,
                              positions, anomalies_par_pos)
 
