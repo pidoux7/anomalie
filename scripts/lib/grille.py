@@ -15,6 +15,7 @@ import hashlib
 import os
 import random
 import shutil
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -77,23 +78,51 @@ def cache_key(source, debut, duree, cell_w, cell_h, filtre):
 # ============================================================
 # Segments individuels
 # ============================================================
+def _fichier_utilisable(path):
+    """Un fichier mp4 valide fait au moins ~2 KB (header + 1 frame)."""
+    return Path(path).exists() and Path(path).stat().st_size > 2048
+
+
+def _publier_dans_cache(source_path, cache_path):
+    """
+    Copie source_path → cache_path de manière atomique (tempfile + os.replace),
+    pour éviter qu'un autre thread voie un fichier de cache mi-écrit. Si la
+    copie échoue, on ignore silencieusement (le cache n'est qu'une optimisation).
+    """
+    try:
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            dir=str(cache_path.parent), suffix=".tmp"
+        )
+        os.close(tmp_fd)
+        shutil.copy(str(source_path), tmp_path)
+        os.replace(tmp_path, str(cache_path))
+    except OSError:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+
 def fabriquer_segment(source, dest, debut, duree, cell_w, cell_h, filtre=None):
     """
-    Génère un mini-segment vidéo. Utilise le cache si actif.
-    Si un filtre fait planter ffmpeg (paramètres invalides pour la taille
-    de cellule, syntaxe ffmpeg cassée, etc.), on retombe automatiquement
-    sur la même cellule sans filtre — le rendu reste utilisable.
+    Génère un mini-segment vidéo et le copie au besoin dans le cache.
+
+    On écrit toujours d'abord sur `dest` (chemin unique par tâche), puis on
+    publie une copie dans le cache de manière atomique. Cela évite qu'avec
+    le parallélisme, deux threads ayant le même cache_key (même filtre,
+    même cellule) écrivent simultanément sur le même fichier de cache et
+    produisent une sortie corrompue.
+
+    Si un filtre fait planter ffmpeg ou produit un fichier illisible, on
+    retombe automatiquement sur la même cellule sans filtre.
     """
     cache_path = None
     if config.CACHE_ACTIF:
         key = cache_key(source, debut, duree, cell_w, cell_h, filtre)
         cache_path = config.CACHE_DIR / f"{key}.mp4"
-        if cache_path.exists() and cache_path.stat().st_size > 0:
+        if _fichier_utilisable(cache_path):
             shutil.copy(str(cache_path), str(dest))
             return
-        target = cache_path
-    else:
-        target = dest
 
     parts = []
     if config.CELLULES_CARREES:
@@ -116,33 +145,26 @@ def fabriquer_segment(source, dest, debut, duree, cell_w, cell_h, filtre=None):
         "-r", "30", "-fps_mode", "cfr",
         *config.args_encodage("22"),
         "-pix_fmt", "yuv420p", "-an",
-        str(target)
+        str(dest),
     ]
 
-    def _fichier_utilisable(path):
-        """Un fichier mp4 valide fait au moins ~2 KB (header + 1 frame)."""
-        return Path(path).exists() and Path(path).stat().st_size > 2048
-
     if filtre:
-        # Mode lenient : si le filtre échoue OU produit un fichier vide,
-        # on retombe sur la même cellule sans filtre.
         rc, err = run_lenient(cmd)
-        if rc != 0 or not _fichier_utilisable(target):
+        if rc != 0 or not _fichier_utilisable(dest):
             raison = "ffmpeg a échoué" if rc != 0 else "fichier produit invalide"
             print(f"  [warn] filtre '{filtre}' : {raison} ({cell_w}x{cell_h}) → "
                   f"fallback sans filtre")
             if rc != 0 and err.strip():
                 print(f"    {err.strip().splitlines()[-1]}")
-            # Nettoie le fichier partiel pour ne pas polluer le cache
-            if Path(target).exists():
-                Path(target).unlink()
-            return fabriquer_segment(source, dest, debut, duree, cell_w, cell_h,
-                                       filtre=None)
+            if Path(dest).exists():
+                Path(dest).unlink()
+            return fabriquer_segment(source, dest, debut, duree,
+                                       cell_w, cell_h, filtre=None)
     else:
         run(cmd)
 
-    if config.CACHE_ACTIF and target == cache_path:
-        shutil.copy(str(cache_path), str(dest))
+    if config.CACHE_ACTIF and cache_path is not None:
+        _publier_dans_cache(dest, cache_path)
 
 
 def fabriquer_segments_paralleles(taches):
