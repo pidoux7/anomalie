@@ -1,0 +1,106 @@
+# ============================================================
+# Scenario "bas" — démarrage en douceur, montée graduelle
+# Lancement : python3 scripts/montage_grille.py scenarios/scenario_bas.yaml
+# ============================================================
+
+# --- Fichiers ---
+input_video: "videos/IMG_0175.MOV"
+input_anomalie: null
+output_video: "videos/scenario_bas.mp4"
+
+# --- Résolution (1080p pour un test rapide) ---
+final_w: 1920
+final_h: 1080
+cellules_carrees: true
+
+# --- Durée : on laisse le scenario piloter, mais on borne ---
+mode_duree: "duree_max"
+duree_max: 120
+duree_totale: 120
+n_boucles_par_phase: 1
+fin_partielle: "etendre"
+max_cases: 256
+
+# --- Anomalies (utilisé en fallback / mode auto) ---
+mode_anomalie: "filtres"
+changement_anomalie: "phase"
+intervalle_changement: 30
+mode_quantite: "fixe"
+nb_anomalies_fixe: 1
+ratio_proportionnel: 0.015
+
+# --- Encodage ---
+preset_x264: "fast"
+crf: 22
+
+performance:
+  encodeur: "auto"
+  qualite_hw: 65
+  parallelisme: "auto"
+  cache_actif: true
+
+# --- Filtres disponibles pour le scenario ---
+filtres_anomalies:
+  - { nom: "pixelise", filtre: "pixelize=12:12", actif: true }
+  - { nom: "negatif",  filtre: "negate", actif: true }
+  - { nom: "blur",     filtre: "boxblur=10", actif: true }
+
+# ============================================================
+# PLAN — scenario explicite
+# ============================================================
+mode_plan: "scenario"
+
+scenario:
+  duree_par_defaut: "boucle"
+  sequences:
+    - { taille: 1 }                                          # ouverture plein cadre
+    - { taille: 2, anomalies: 1, filtre: "blur" }            # 1 cellule floue
+    - { taille: 4, anomalies: 2, filtre: "pixelise" }        # 2 cellules pixelisées
+    - { taille: 8, anomalies: 4, aleatoire: true }           # 4 anomalies tirées au hasard
+    - { taille: 16, anomalies: 6, filtre: 2 }                # 6 cellules en négatif (index 2)
+    - { taille: 16, effet: "lsd", duree: 20 }                # final psychédélique 20s
+
+# Masques désactivés pour ce scenario
+masques:
+  actif: false
+
+# Effet LSD (réglages utilisés pour la dernière séquence)
+effets:
+  actif: true
+  liste: ["lsd"]
+  portee: "min_cases"
+  seuil_cases: 256
+  lsd:
+    amplitude_onde: 80
+    vitesse_onde: 0.6
+    frequence_onde: 6
+    aberration: 6
+    saturation: 2.0
+    teinte: 280
+    lignes_force: 0.5
+    lignes_mode: "edges"
+
+# ============================================================
+# AUDIO — timeline scenario
+# ============================================================
+audio:
+  actif: true
+  mode: "scenario"
+  conflit_par_defaut: "ecrase"
+
+  scenario:
+    # Fond ambiant qui tourne tout du long, à bas volume
+    - { ancre: "fond", fichier: "musiques/spiral.mp3", volume: 0.3, mode: "mix" }
+
+    # Sur la dernière minute, on fait monter une seconde piste qui écrase le fond local
+    - { ancre: "duree", de: "1:00", a: "2:00",
+        fichier: "musiques/spiral.mp3", debut: "0:30", volume: 0.8 }
+
+  # Champs requis par le mode auto (ignorés ici mais lus pour ne pas planter)
+  fichiers: []
+  comportement: "reset"
+  audio_source: "couper"
+  volume_musique: 0.7
+  volume_source: 1.0
+  fade_in: 1.0
+  fade_out: 2.0

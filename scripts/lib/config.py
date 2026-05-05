@@ -30,7 +30,7 @@ except ImportError:
 # ============================================================
 # 1. Lecture du YAML
 # ============================================================
-config_path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
+config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/config.yaml"
 if not Path(config_path).exists():
     print(f"Config introuvable : {config_path}")
     sys.exit(1)

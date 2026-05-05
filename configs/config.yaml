@@ -3,9 +3,9 @@
 # ============================================================
 
 # --- Fichiers ---
-input_video: "IMG_0175.MOV"
+input_video: "videos/IMG_0175.MOV"
 input_anomalie: null
-output_video: "montage_final.mp4"
+output_video: "videos/montage_final.mp4"
 
 # --- Résolution ---
 final_w: 3840
@@ -229,7 +229,7 @@ effets:
   mosaique:
     # Vidéo "carte" qui définit la luminosité de chaque cellule.
     # Idéalement un visage ou une vidéo très contrastée pour bien voir l'effet.
-    video_carte: "./IMG_0175.MOV"
+    video_carte: "videos/IMG_0175.MOV"
     # Bornes (mêmes formats que pour audio : secondes ou "mm:ss")
     debut: 0
     fin: null                          # null = jusqu'à la fin
