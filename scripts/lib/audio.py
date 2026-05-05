@@ -307,6 +307,11 @@ def _construire_timeline_ecrase(pistes_ecrase, duree_totale):
 
 def _resoudre_fenetre(entry, plan, duree_totale):
     """Calcule (debut_abs, fin_abs) à partir de l'ancre."""
+    if not isinstance(entry, dict):
+        print(f"ERREUR audio scenario : entrée mal formée (attendu un dict, "
+              f"reçu {type(entry).__name__}) : {entry!r}")
+        print("  → Vérifie l'indentation et les commentaires dans audio.scenario")
+        sys.exit(1)
     ancre = entry.get("ancre")
     if ancre == "duree":
         debut = parser_timestamp(entry["de"])
@@ -318,7 +323,8 @@ def _resoudre_fenetre(entry, plan, duree_totale):
     elif ancre == "fond":
         debut, fin = 0.0, duree_totale
     else:
-        print(f"ERREUR audio scenario : ancre inconnue '{ancre}'")
+        print(f"ERREUR audio scenario : ancre inconnue '{ancre}' dans entrée : {entry}")
+        print("  Ancres valides : phase | sequence | duree | fond")
         sys.exit(1)
     return debut, fin
 
@@ -329,8 +335,14 @@ def construire_piste_audio_scenario(piste_path, plan, scenario_cfg,
     Construit la piste audio à partir d'une liste de directives.
     Chaque entrée : {ancre, fichier, ..., mode: "mix"|"ecrase"}
     """
+    # Filtre les entrées None / vides (par ex. provenant d'une ligne YAML
+    # mal indentée parmi les commentaires).
+    scenario_cfg = [e for e in (scenario_cfg or []) if isinstance(e, dict)]
     if not scenario_cfg:
-        print("ERREUR audio scenario : 'audio.scenario' est vide")
+        print("ERREUR audio scenario : 'audio.scenario' est vide ou n'a "
+              "aucune entrée valide.")
+        print("  → Si tu n'as pas encore défini de timeline, mets "
+              "audio.mode: \"auto\".")
         sys.exit(1)
 
     duree_totale = sum(p[2] for p in plan)

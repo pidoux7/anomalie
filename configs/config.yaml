@@ -127,7 +127,7 @@ audio:
   # Mode :
   #   "auto"     : ancien comportement (liste `fichiers` + `comportement`)
   #   "scenario" : timeline explicite via `scenario` ci-dessous
-  mode: "scenario"
+  mode: "auto"
 
   # Comportement par défaut quand 2 pistes scenario se chevauchent :
   #   "ecrase" : la dernière déclarée prend la fenêtre (la précédente est coupée)
@@ -161,7 +161,7 @@ audio:
   #     → format hh:mm:ss aussi accepté
   #   - { fichier: "musiques/musique.mp3", aleatoire: true, duree: 60 }
   #     → tire au sort un point de départ, prend 60s à partir de là
-  - { fichier: "musiques/spiral.mp3" }
+  #   - { fichier: "musiques/musique.mp3" }
   #     → utilise le fichier entier (du début à la fin)
   fichiers:
     - "musiques/spiral.mp3"
