@@ -1,0 +1,54 @@
+# ============================================================
+# Scenario "sequence_test" : test rapide de la transition progressive
+# B → A. Pas d'audio, pas de phases inutiles. ~45 secondes au total.
+#
+# Lancement :
+#     python3 scripts/montage_grille.py scenarios/sequence_test.yaml
+#
+# Adapte `videos/video_b.mp4` au chemin de ta vraie vidéo B.
+# ============================================================
+
+output_video: "videos/sequence_test.mp4"
+
+# Vidéo A "cible" de la transition (= input_video de base)
+# Vidéo B = source visible avant la transition (videos/video_b.mp4 ci-dessous)
+input_anomalie: "videos/IMG_0175.MOV"
+
+# 64×64 → 4096 cellules
+max_cases: 4096
+
+# Pas de masques globaux
+masques:
+  actif: false
+
+# Audio désactivé pour aller vite
+audio:
+  actif: false
+
+# ============================================================
+# PLAN — minimal, focus sur la transition
+# ============================================================
+mode_plan: "scenario"
+
+scenario:
+  duree_par_defaut: 5
+  sequences:
+    # 1. Plein écran vidéo B (5s) — point de départ visible
+    - { taille: 1, video: "videos/video_b.mp4" }
+
+    # 2. Grille 64×64 pure vidéo B (5s) — toutes les cellules = vidéo B
+    - { taille: 64, video: "videos/video_b.mp4", anomalies: 0 }
+
+    # 3. Transition progressive : 30 paliers d'1s = 30s totales
+    #    À chaque seconde, ~136 nouvelles cellules passent à la vidéo A.
+    - type: "transition"
+      taille: 64
+      video: "videos/video_b.mp4"
+      source: "video"
+      anomalies_de: 0
+      anomalies_a: 4090
+      duree_totale: 30
+      paliers: 30
+
+    # 4. Stabilisation 64×64 vidéo A (5s) — état final
+    - { taille: 64, video: "videos/IMG_0175.MOV", anomalies: 0 }
