@@ -466,8 +466,13 @@ def creer_effet_transition_smooth(video_b, video_a, taille, debut, duree,
         str(mask_video)
     ])
 
-    # Composition : maskedmerge prend (background, foreground, mask).
-    # Mask noir → background (B), mask blanc → foreground (A).
+    # Composition : on utilise alphamerge + overlay (pattern classique
+    # bien documenté de ffmpeg).
+    #   - extractplanes=y : isole le plan luma du mask → grayscale propre
+    #   - alphamerge : applique ce grayscale comme canal alpha sur la
+    #     vidéo A (foreground). Pixel mask blanc → A opaque ; noir → A
+    #     transparent.
+    #   - overlay : compose A (transparent par endroit) sur B (fond).
     fusionne = config.WORK_DIR / f"trans_fusion_{taille}_{int(debut)}.mp4"
     run([
         "ffmpeg", "-y",
@@ -475,7 +480,10 @@ def creer_effet_transition_smooth(video_b, video_a, taille, debut, duree,
         "-i", str(grille_a),
         "-i", str(mask_video),
         "-filter_complex",
-            "[2:v]format=gray[m];[0:v][1:v][m]maskedmerge[v]",
+            "[2:v]extractplanes=y[mask_y];"
+            "[1:v]format=yuva420p[fg];"
+            "[fg][mask_y]alphamerge[fg_alpha];"
+            "[0:v][fg_alpha]overlay=format=auto[v]",
         "-map", "[v]",
         "-t", str(duree),
         *config.args_encodage(),
