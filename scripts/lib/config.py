@@ -407,10 +407,26 @@ def construire_plan_scenario():
                 num_phase += 1
             continue
 
-        # Bloc transition : déplie en N paliers cumulatifs avec progression
-        # linéaire du nombre d'anomalies entre `anomalies_de` et `anomalies_a`.
+        # Bloc transition : deux modes.
+        # - "paliers" (défaut) : déplie en N paliers cumulatifs.
+        # - "smooth" : une seule séquence avec un effet `transition_smooth`
+        #   qui révèle les cellules cellule-par-cellule via un mask animé
+        #   (typiquement ~5 cellules par frame à 30 fps, perçu continu).
         if entry.get("type") == "transition":
             taille_t = int(entry["taille"])
+            mode_t = entry.get("mode", "paliers")
+
+            if mode_t == "smooth":
+                duree_smooth = float(
+                    entry.get("duree_totale")
+                    or _resolve_duree_seq(entry.get("duree"), duree_par_defaut)
+                )
+                directives = {"effet": "transition_smooth"}
+                if "video" in entry:
+                    directives["video"] = entry["video"]
+                plan.append((num_phase, taille_t, duree_smooth, directives))
+                continue
+
             n_paliers = int(entry.get("paliers", 20))
             a_de = int(entry.get("anomalies_de", 0))
             a_a = int(entry.get("anomalies_a", taille_t * taille_t))

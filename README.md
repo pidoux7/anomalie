@@ -96,9 +96,8 @@ scenario:
     - { taille: 8, aleatoire: true, anomalies: 3 }               # filtres tirés au hasard
     - { auto: "phase", boucles: 2 }                              # 2 phases classiques
 
-    # Bloc transition : déplie en N paliers cumulatifs avec progression
-    # linéaire du nombre d'anomalies (idéal pour passer cellule par
-    # cellule d'une vidéo à une autre, sans saccade).
+    # Bloc transition - mode "paliers" (défaut) : déplie en N paliers
+    # cumulatifs ; chaque palier ajoute un groupe de cellules d'un coup.
     - type: "transition"
       taille: 64
       video: "videos/video_b.mp4"
@@ -107,6 +106,16 @@ scenario:
       anomalies_a: 4090
       duree_totale: 40            # secondes
       paliers: 20                 # → 20 paliers de 2s avec cumulatif: true
+
+    # Bloc transition - mode "smooth" : une seule séquence avec un mask
+    # animé qui révèle les cellules ~frame par frame (à 30 fps sur 30s :
+    # ~5 cellules par frame, perçu comme continu cellule par cellule).
+    # Plus rapide à rendre et plus fluide visuellement que le mode paliers.
+    - type: "transition"
+      mode: "smooth"
+      taille: 64
+      video: "videos/video_b.mp4"   # vidéo de fond
+      duree_totale: 30              # input_anomalie = vidéo qui apparaît
 ```
 
 **Champs d'une séquence :**

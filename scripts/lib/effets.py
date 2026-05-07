@@ -4,12 +4,17 @@ Effets spéciaux jouables sur une phase :
     - mur_moniteurs : chaque cellule joue une vidéo différente
     - lsd          : distorsion ondulatoire + aberration + saturation
     - masque       : utilise le système de masques en effet (creer_phase_masque_seul)
+    - transition_smooth : transition cellule-par-cellule via mask animé
 
 `jouer_effet` est le dispatcher utilisé par `phases.creer_phase`.
 """
 
 import math
+import random
 import sys
+from pathlib import Path
+
+from PIL import Image
 
 from . import config
 from .commun import run, get_duration, parser_timestamp
@@ -384,6 +389,113 @@ def creer_phase_masque_seul(video_normale, video_anomalie_externe, taille,
 
 
 # ============================================================
+# Transition cellule par cellule via mask animé
+# ============================================================
+def creer_effet_transition_smooth(video_b, video_a, taille, debut, duree,
+                                    output_path, cell_w, cell_h, pad_x, pad_y):
+    """
+    Transition pixel par pixel : la vidéo A apparaît cellule par cellule
+    par-dessus la vidéo B. Au lieu de N paliers ffmpeg discrets, on génère
+    une vidéo de mask (un PNG par frame) qui révèle progressivement les
+    cellules dans un ordre aléatoire déterministe, puis on compose A/B
+    via maskedmerge en UN seul ffmpeg.
+
+    À 30 fps, sur duree secondes, on a ~30*duree frames disponibles. Si
+    n_cellules > n_frames, plusieurs cellules apparaissent par frame ;
+    sinon on a vraiment 1 cellule (ou rien) par frame.
+    """
+    n_cellules = taille * taille
+    grid_w = cell_w * taille
+    grid_h = cell_h * taille
+    fps = 30
+    n_frames = max(1, int(duree * fps))
+
+    print(f"    [transition_smooth] grille A (vidéo qui apparaît) : {video_a}")
+    mini_a = config.WORK_DIR / f"trans_mini_a_{taille}_{int(debut)}.mp4"
+    fabriquer_segment(video_a, mini_a, debut, duree, cell_w, cell_h)
+    grille_a = config.WORK_DIR / f"trans_grille_a_{taille}_{int(debut)}.mp4"
+    paths = [mini_a] * n_cellules
+    if n_cellules > 256:
+        assembler_grille_par_lignes(taille, paths, duree, grille_a, 0, 0)
+    else:
+        assembler_grille(taille, paths, duree, grille_a, 0, 0)
+
+    print(f"    [transition_smooth] grille B (fond) : {video_b}")
+    mini_b = config.WORK_DIR / f"trans_mini_b_{taille}_{int(debut)}.mp4"
+    fabriquer_segment(video_b, mini_b, debut, duree, cell_w, cell_h)
+    grille_b = config.WORK_DIR / f"trans_grille_b_{taille}_{int(debut)}.mp4"
+    paths = [mini_b] * n_cellules
+    if n_cellules > 256:
+        assembler_grille_par_lignes(taille, paths, duree, grille_b, 0, 0)
+    else:
+        assembler_grille(taille, paths, duree, grille_b, 0, 0)
+
+    print(f"    [transition_smooth] mask animé "
+          f"({n_cellules} cellules sur {n_frames} frames "
+          f"≈ {n_cellules/n_frames:.1f}/frame)")
+
+    # Ordre de révélation des cellules (déterministe par seed)
+    rng = random.Random(f"transition_smooth|{taille}|{int(debut)}|{int(duree)}")
+    ordre = list(range(n_cellules))
+    rng.shuffle(ordre)
+
+    mask_dir = config.WORK_DIR / f"trans_mask_{taille}_{int(debut)}"
+    mask_dir.mkdir(parents=True, exist_ok=True)
+    # Nettoie d'éventuels frames d'un run précédent (sinon le %05d glob
+    # pourrait inclure des frames résiduelles avec un autre n_frames).
+    for old in mask_dir.glob("frame_*.png"):
+        old.unlink()
+
+    for f_idx in range(n_frames):
+        n_revelees = int((f_idx + 1) / n_frames * n_cellules)
+        img = Image.new("L", (taille, taille), 0)
+        pixels = img.load()
+        for c in ordre[:n_revelees]:
+            x, y = c % taille, c // taille
+            pixels[x, y] = 255
+        img.save(mask_dir / f"frame_{f_idx:05d}.png")
+
+    mask_video = config.WORK_DIR / f"trans_mask_{taille}_{int(debut)}.mp4"
+    run([
+        "ffmpeg", "-y",
+        "-framerate", str(fps),
+        "-i", str(mask_dir / "frame_%05d.png"),
+        "-vf", f"scale={grid_w}:{grid_h}:flags=neighbor",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "10",
+        "-pix_fmt", "yuv420p",
+        str(mask_video)
+    ])
+
+    # Composition : maskedmerge prend (background, foreground, mask).
+    # Mask noir → background (B), mask blanc → foreground (A).
+    fusionne = config.WORK_DIR / f"trans_fusion_{taille}_{int(debut)}.mp4"
+    run([
+        "ffmpeg", "-y",
+        "-i", str(grille_b),
+        "-i", str(grille_a),
+        "-i", str(mask_video),
+        "-filter_complex",
+            "[2:v]format=gray[m];[0:v][1:v][m]maskedmerge[v]",
+        "-map", "[v]",
+        "-t", str(duree),
+        *config.args_encodage(),
+        "-pix_fmt", "yuv420p",
+        str(fusionne)
+    ])
+
+    if pad_x > 0 or pad_y > 0:
+        run([
+            "ffmpeg", "-y", "-i", str(fusionne),
+            "-vf", f"pad={config.FINAL_W}:{config.FINAL_H}:{pad_x}:{pad_y}:black,setsar=1",
+            *config.args_encodage(),
+            "-pix_fmt", "yuv420p",
+            str(output_path)
+        ])
+    else:
+        fusionne.rename(output_path)
+
+
+# ============================================================
 # Dispatcher
 # ============================================================
 def jouer_effet(nom_effet, video_source, video_anomalie_externe, taille,
@@ -401,6 +513,16 @@ def jouer_effet(nom_effet, video_source, video_anomalie_externe, taille,
         creer_phase_masque_seul(video_source, video_anomalie_externe, taille,
                                   debut_source, duree, output_path,
                                   cell_w, cell_h, pad_x, pad_y)
+    elif nom_effet == "transition_smooth":
+        if video_anomalie_externe is None:
+            print("ERREUR : effet 'transition_smooth' nécessite input_anomalie")
+            sys.exit(1)
+        # video_source = la vidéo de fond (B), video_anomalie_externe = vidéo
+        # qui apparaît cellule par cellule (A).
+        creer_effet_transition_smooth(video_source, video_anomalie_externe,
+                                        taille, debut_source, duree,
+                                        output_path, cell_w, cell_h,
+                                        pad_x, pad_y)
     else:
         print(f"ERREUR : effet inconnu '{nom_effet}'")
         sys.exit(1)

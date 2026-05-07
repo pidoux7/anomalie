@@ -39,20 +39,16 @@ scenario:
     # 2. Grille 64×64 pure vidéo B (5s) — toutes les cellules = vidéo B
     - { taille: 64, video: "videos/video_b.mp4", anomalies: 0 }
 
-    # 3. Transition progressive : 30 paliers d'1s = 30s totales
-    #    À chaque seconde, ~136 nouvelles cellules passent à la vidéo A.
-    #    decalage_aleatoire: false → toutes les cellules anomales lisent
-    #    le MÊME instant de la vidéo A en même temps (au lieu de chacune
-    #    à un offset propre). Le fond vidéo B avance aussi en boucle.
+    # 3. Transition smooth : un mask animé révèle les cellules à chaque
+    #    frame (~5 cellules / frame à 30 fps sur 30s). En une seule passe
+    #    ffmpeg : beaucoup plus rapide à rendre que des paliers, et perçu
+    #    comme une apparition cellule-par-cellule continue.
     - type: "transition"
+      mode: "smooth"
       taille: 64
-      video: "videos/video_b.mp4"
-      source: "video"
-      decalage_aleatoire: false
-      anomalies_de: 0
-      anomalies_a: 4090
+      video: "videos/video_b.mp4"     # fond
       duree_totale: 30
-      paliers: 30
+      # input_anomalie de la config = vidéo A qui apparaît cellule par cellule
 
     # 4. Stabilisation 64×64 vidéo A (5s) — état final
     - { taille: 64, video: "videos/IMG_0175.MOV", anomalies: 0 }
