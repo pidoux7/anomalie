@@ -95,6 +95,18 @@ scenario:
     - { taille: 32, masque: "masques/7.png" }                    # masque ad-hoc
     - { taille: 8, aleatoire: true, anomalies: 3 }               # filtres tirés au hasard
     - { auto: "phase", boucles: 2 }                              # 2 phases classiques
+
+    # Bloc transition : déplie en N paliers cumulatifs avec progression
+    # linéaire du nombre d'anomalies (idéal pour passer cellule par
+    # cellule d'une vidéo à une autre, sans saccade).
+    - type: "transition"
+      taille: 64
+      video: "videos/video_b.mp4"
+      source: "video"             # cellules anomales = input_anomalie
+      anomalies_de: 0
+      anomalies_a: 4090
+      duree_totale: 40            # secondes
+      paliers: 20                 # → 20 paliers de 2s avec cumulatif: true
 ```
 
 **Champs d'une séquence :**

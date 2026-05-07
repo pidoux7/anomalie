@@ -403,6 +403,41 @@ def construire_plan_scenario():
                 num_phase += 1
             continue
 
+        # Bloc transition : déplie en N paliers cumulatifs avec progression
+        # linéaire du nombre d'anomalies entre `anomalies_de` et `anomalies_a`.
+        if entry.get("type") == "transition":
+            taille_t = int(entry["taille"])
+            n_paliers = int(entry.get("paliers", 20))
+            a_de = int(entry.get("anomalies_de", 0))
+            a_a = int(entry.get("anomalies_a", taille_t * taille_t))
+            duree_totale_t = float(
+                entry.get("duree_totale")
+                or (_resolve_duree_seq(entry.get("duree"), duree_par_defaut)
+                    * n_paliers)
+            )
+            duree_palier = duree_totale_t / n_paliers
+
+            # Champs communs hérités sur chaque palier (filtre, video, source…)
+            champs_communs = {
+                k: v for k, v in entry.items()
+                if k not in ("type", "taille", "paliers", "anomalies_de",
+                             "anomalies_a", "duree_totale", "duree", "anomalies",
+                             "cumulatif")
+            }
+
+            for k in range(n_paliers):
+                frac = (k + 1) / n_paliers
+                anomalies_k = int(round(a_de + (a_a - a_de) * frac))
+                sub_entry = dict(champs_communs)
+                sub_entry["taille"] = taille_t
+                sub_entry["anomalies"] = anomalies_k
+                sub_entry["duree"] = duree_palier
+                if k > 0:
+                    sub_entry["cumulatif"] = True
+                directives = _construire_directives(sub_entry)
+                plan.append((num_phase, taille_t, duree_palier, directives))
+            continue
+
         # Séquence explicite
         taille = entry.get("taille")
         if taille is None:
