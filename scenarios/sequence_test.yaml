@@ -41,10 +41,14 @@ scenario:
 
     # 3. Transition progressive : 30 paliers d'1s = 30s totales
     #    À chaque seconde, ~136 nouvelles cellules passent à la vidéo A.
+    #    decalage_aleatoire: false → toutes les cellules anomales lisent
+    #    le MÊME instant de la vidéo A en même temps (au lieu de chacune
+    #    à un offset propre). Le fond vidéo B avance aussi en boucle.
     - type: "transition"
       taille: 64
       video: "videos/video_b.mp4"
       source: "video"
+      decalage_aleatoire: false
       anomalies_de: 0
       anomalies_a: 4090
       duree_totale: 30

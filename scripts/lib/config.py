@@ -318,6 +318,10 @@ def _construire_directives(entry):
         # Conserve les positions anomales du palier précédent à la même
         # taille, puis n'en ajoute que de nouvelles pour atteindre `anomalies`.
         d["cumulatif"] = True
+    if "decalage_aleatoire" in entry:
+        # Si False : toutes les cellules anomales (source: video) lisent
+        # le même instant de la source au lieu d'avoir chacune son offset.
+        d["decalage_aleatoire"] = bool(entry["decalage_aleatoire"])
 
     # Défaut : 1 anomalie dès qu'on précise un filtre/source/aléatoire
     a_specifie = ("filtre" in d or "source" in d or "aleatoire" in d)

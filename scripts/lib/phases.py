@@ -36,10 +36,11 @@ def _resoudre_video_source(directives, video_par_defaut, debut_par_defaut):
     """
     Détermine la vidéo source de la séquence selon directives['video'] :
       - absent       → (video_par_defaut, debut_par_defaut)
-      - chaîne       → (chemin, 0)
-      - liste de chaînes → tirage aléatoire (chaque exécution rejoue le tirage)
-    Pour une vidéo dédiée, on repart à 0 (l'offset cumulé du plan ne s'applique
-    pas à une autre vidéo).
+      - chaîne       → (chemin, debut_par_defaut)
+      - liste        → tirage aléatoire parmi la liste
+    On garde debut_par_defaut comme offset : fabriquer_segment fait le
+    modulo sur la durée + stream_loop, donc la vidéo dédiée tourne en
+    boucle au même rythme que les autres au lieu d'être figée à 0.
     """
     if "video" not in directives:
         return video_par_defaut, debut_par_defaut
@@ -54,7 +55,7 @@ def _resoudre_video_source(directives, video_par_defaut, debut_par_defaut):
         print(f"ERREUR scenario : vidéo introuvable : {v}")
         sys.exit(1)
     print(f"  Vidéo source dédiée : {v}")
-    return v, 0.0
+    return v, debut_par_defaut
 
 
 def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
@@ -66,6 +67,7 @@ def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
     """
     n_cellules = taille * taille
     video_eff, debut_eff = _resoudre_video_source(directives, video_normale, debut_phase)
+    decalage_aleatoire = directives.get("decalage_aleatoire", True)
 
     if directives.get("source") == "video" and video_anomalie_externe is None:
         print("ERREUR scenario : 'source: video' demandé mais input_anomalie "
@@ -97,7 +99,8 @@ def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
         construire_sous_segment(video_eff, video_anomalie_externe,
                                  taille, debut_eff, duree_phase, output_path,
                                  cell_w, cell_h, pad_x, pad_y,
-                                 set(positions), anomalies_par_pos)
+                                 set(positions), anomalies_par_pos,
+                                 decalage_aleatoire=decalage_aleatoire)
         return
 
     # Mode "anomalies à des positions tirées au hasard"
@@ -108,7 +111,8 @@ def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
         construire_sous_segment(video_eff, video_anomalie_externe,
                                  taille, debut_eff, duree_phase, output_path,
                                  cell_w, cell_h, pad_x, pad_y,
-                                 set(), {})
+                                 set(), {},
+                                 decalage_aleatoire=decalage_aleatoire)
         return
 
     # Tirage des positions : cumulatif ou aléatoire neuf
@@ -146,7 +150,8 @@ def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
     construire_sous_segment(video_eff, video_anomalie_externe,
                              taille, debut_eff, duree_phase, output_path,
                              cell_w, cell_h, pad_x, pad_y,
-                             positions, anomalies_par_pos)
+                             positions, anomalies_par_pos,
+                             decalage_aleatoire=decalage_aleatoire)
 
 
 def creer_phase(video_normale, video_anomalie_externe, taille,

@@ -121,7 +121,14 @@ scenario:
 | `masque`    | Chemin d'image (motif dessiné par les cellules anomales)                 |
 | `video`     | Chemin (str) **ou** liste (tirage aléatoire) — override `input_video`    |
 | `aleatoire` | `true` pour tirer le filtre au hasard parmi les filtres actifs           |
+| `cumulatif` | `true` : conserve les positions anomales du palier précédent             |
 | `duree`     | Override la durée de la séquence (en secondes)                           |
+
+**`decalage_aleatoire`** (booléen, défaut `true`) : contrôle le timing
+des cellules `source: video`. Avec `true` (défaut), chaque cellule lit
+la vidéo externe à son propre offset → look mosaïque. Avec `false`,
+toutes les cellules lisent le **même instant** de la vidéo en même temps
+→ on voit la vidéo entière à travers le quadrillage, sans saccade.
 
 **Note `video`** : disponible uniquement en mode scenario. Si absent, la
 séquence utilise `input_video` (config globale). Si présent, la vidéo

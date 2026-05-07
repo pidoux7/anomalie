@@ -63,6 +63,21 @@ def preparer_video(input_path, output_path, duree, w, h):
 # ============================================================
 # Cache
 # ============================================================
+# Cache des durées de source (évite des appels ffprobe redondants depuis
+# fabriquer_segment quand on génère des centaines de cellules d'affilée).
+_duree_source_cache = {}
+
+
+def _duree_source(path):
+    key = str(path)
+    if key not in _duree_source_cache:
+        try:
+            _duree_source_cache[key] = get_duration(path)
+        except Exception:
+            _duree_source_cache[key] = 0.0
+    return _duree_source_cache[key]
+
+
 def cache_key(source, debut, duree, cell_w, cell_h, filtre):
     """Calcule un hash unique pour un fabriquer_segment."""
     try:
@@ -120,9 +135,16 @@ def fabriquer_segment(source, dest, debut, duree, cell_w, cell_h, filtre=None,
     silent=True supprime le ">>> ffmpeg ..." (utile en boucle parallèle
     où c'est tqdm qui affiche la progression).
     """
+    # Modulo sur la durée de la source : permet à `debut` d'être un
+    # timestamp absolu du plan (ex. 152s) même sur une source plus
+    # courte (22s). `-stream_loop -1` derrière fait boucler ffmpeg si
+    # la durée demandée dépasse ce qui reste à partir de `debut_modulo`.
+    duree_src = _duree_source(source)
+    debut_modulo = (debut % duree_src) if duree_src > 0 else debut
+
     cache_path = None
     if config.CACHE_ACTIF:
-        key = cache_key(source, debut, duree, cell_w, cell_h, filtre)
+        key = cache_key(source, debut_modulo, duree, cell_w, cell_h, filtre)
         cache_path = config.CACHE_DIR / f"{key}.mp4"
         if _fichier_utilisable(cache_path):
             shutil.copy(str(cache_path), str(dest))
@@ -142,7 +164,8 @@ def fabriquer_segment(source, dest, debut, duree, cell_w, cell_h, filtre=None,
     # peuvent produire des fichiers vides ou très courts.
     cmd = [
         "ffmpeg", "-y",
-        "-ss", str(debut),
+        "-stream_loop", "-1",
+        "-ss", str(debut_modulo),
         "-i", str(source),
         "-t", str(duree),
         "-vf", vf,
@@ -286,7 +309,8 @@ def assembler_grille_par_lignes(taille, paths, duree, output_path, pad_x, pad_y)
 def construire_sous_segment(video_normale, video_anomalie_externe,
                               taille, debut, duree, output_path,
                               cell_w, cell_h, pad_x, pad_y,
-                              positions_anomalies, anomalies_par_pos):
+                              positions_anomalies, anomalies_par_pos,
+                              decalage_aleatoire=True):
     n_cellules = taille * taille
 
     if taille == 1:
@@ -359,17 +383,20 @@ def construire_sous_segment(video_normale, video_anomalie_externe,
                         (video_normale, mini, debut, duree, cell_w, cell_h, info_a[1])
                     )
                 else:
-                    # Le seed ne dépend que de (source, position cellule) :
-                    # offset_base est donc constant pour la cellule i entre
-                    # tous les paliers d'une même phase. On ajoute `debut`
-                    # (timestamp absolu de la séquence dans le plan) modulo
-                    # la plage utile, ce qui fait progresser la cellule
-                    # temporellement dans la vidéo externe au lieu de sauter
-                    # à un offset aléatoire à chaque palier.
-                    plage = max(1.0, duree_externe - duree)
-                    rng = random.Random(f"{video_anomalie_externe}|{i}")
-                    offset_base = rng.uniform(0, plage)
-                    debut_ext = (offset_base + debut) % plage
+                    # Deux modes :
+                    # - decalage_aleatoire (défaut) : chaque cellule a son
+                    #   offset propre dans la vidéo externe (look mosaïque
+                    #   avec une cellule = un instant différent de la source).
+                    # - synchrone : toutes les cellules anomales lisent le
+                    #   même instant de la source (vidéo entière vue à
+                    #   travers le quadrillage). Avancement temporel via
+                    #   `debut` ; fabriquer_segment fait le modulo + loop.
+                    if decalage_aleatoire:
+                        rng = random.Random(f"{video_anomalie_externe}|{i}")
+                        offset_base = rng.uniform(0, max(1.0, duree_externe - duree))
+                        debut_ext = offset_base + debut
+                    else:
+                        debut_ext = debut
                     taches_anomalies.append(
                         (video_anomalie_externe, mini, debut_ext, duree, cell_w, cell_h, None)
                     )
