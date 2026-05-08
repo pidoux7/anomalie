@@ -1,0 +1,55 @@
+# ============================================================
+# Scenario "audio_test" : test rapide du comportement enchaine
+# ~60s de vidéo plein écran (rendu très rapide), avec une playlist
+# de 2 morceaux dont un avec bornes debut/fin.
+#
+# Lancement :
+#     python3 scripts/montage_grille.py scenarios/audio_test.yaml
+# ============================================================
+
+output_video: "videos/audio_test.mp4"
+
+# Pas besoin de input_anomalie ici
+input_anomalie: null
+
+# Petite résolution pour aller plus vite
+final_w: 1280
+final_h: 720
+
+# Désactivations pour aller vite
+masques:
+  actif: false
+effets:
+  actif: false
+
+# ============================================================
+# VIDEO — minimale, juste plein écran 60s
+# ============================================================
+mode_plan: "scenario"
+
+scenario:
+  sequences:
+    - { taille: 1, duree: 60 }     # 60s plein écran (un seul ffmpeg simple)
+
+# ============================================================
+# AUDIO — playlist enchaine (spiral 20s + winter 20s, en boucle)
+# ============================================================
+audio:
+  actif: true
+  mode: "auto"
+  comportement: "enchaine"
+  fichiers:
+    # 20s de spiral à partir de 0:30
+    - { fichier: "musiques/spiral.mp3", debut: "0:30", fin: "0:50" }
+    # 20s de winter à partir de 0:10
+    - { fichier: "musiques/winter.mp3", debut: "0:10", fin: "0:30" }
+    # → 40s de playlist + bouclage = ~20s de spiral à nouveau pour atteindre 60s
+
+  audio_source: "couper"
+  volume_musique: 0.8
+  fade_in: 0.5
+  fade_out: 1.0
+
+  # Champs requis du mode auto même s'ils ne servent pas en "enchaine"
+  comportement_sous_segment: "continu"
+  volume_source: 1.0
