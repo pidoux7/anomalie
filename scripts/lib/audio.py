@@ -178,34 +178,67 @@ def construire_piste_audio(piste_path, segments_durees, video_a_audio_source=Non
         # Enchaîne les fichiers selon leur durée propre (bornes debut/fin
         # respectées). Si la playlist totale est plus courte que la vidéo,
         # on boucle ; si plus longue, on tronque.
-        print(f"  Audio : enchaîne {len(entrees)} morceau(x) sur {duree_totale:.0f}s")
+        # `crossfade` (en s) : si > 0, fondu enchaîné entre chaque morceau.
+        crossfade = float(audio_cfg.get("crossfade", 0))
+        print(f"  Audio : enchaîne {len(entrees)} morceau(x) sur {duree_totale:.0f}s"
+              + (f" (crossfade {crossfade}s)" if crossfade > 0 else ""))
+
         sub_audios = []
-        cumul = 0.0
+        # `cumul_net` = durée résultante (après absorption des crossfades).
+        # Chaque morceau ajoute à cumul_net : d_voulue (si premier) ou
+        # d_voulue - crossfade (chevauchement avec le précédent).
+        cumul_net = 0.0
         slot = 0
-        while cumul < duree_totale - 0.05:
+        while cumul_net < duree_totale - 0.05:
             entree = entrees[slot % len(entrees)]
             d_nat = _duree_naturelle(entree)
-            d_voulue = min(d_nat, duree_totale - cumul)
-            if d_voulue <= 0.05:
+            # Reste à couvrir, en tenant compte que ce morceau aura un
+            # crossfade entrant (sauf le premier).
+            chevauchement = crossfade if slot > 0 else 0.0
+            reste = duree_totale - cumul_net + chevauchement
+            d_voulue = min(d_nat, reste)
+            if d_voulue <= max(0.1, chevauchement + 0.05):
                 break
             sub_path = config.WORK_DIR / f"audio_play_{slot:03d}.aac"
             print(f"    [{slot}] {entree['fichier']} ({d_voulue:.1f}s)")
             preparer_extrait_audio(entree, sub_path, d_voulue)
             sub_audios.append(sub_path)
-            cumul += d_voulue
+            cumul_net += d_voulue - chevauchement
             slot += 1
 
-        liste = config.WORK_DIR / "liste_audio.txt"
-        with open(liste, "w") as f:
+        if crossfade > 0 and len(sub_audios) >= 2:
+            # Cascade d'acrossfade : [a0][a1]acrossfade[x1] ; [x1][a2]acrossfade[x2] ...
+            inputs = []
             for a in sub_audios:
-                f.write(f"file '{Path(a).resolve()}'\n")
-        run([
-            "ffmpeg", "-y",
-            "-f", "concat", "-safe", "0",
-            "-i", str(liste),
-            "-c", "copy",
-            str(musique_path)
-        ])
+                inputs += ["-i", str(a)]
+            fc_parts = []
+            last = "0:a"
+            for i in range(1, len(sub_audios)):
+                label = f"x{i}"
+                fc_parts.append(
+                    f"[{last}][{i}:a]acrossfade=d={crossfade}:c1=tri:c2=tri[{label}]"
+                )
+                last = label
+            run([
+                "ffmpeg", "-y",
+                *inputs,
+                "-filter_complex", ";".join(fc_parts),
+                "-map", f"[{last}]",
+                "-c:a", "aac", "-b:a", "192k",
+                str(musique_path)
+            ])
+        else:
+            liste = config.WORK_DIR / "liste_audio.txt"
+            with open(liste, "w") as f:
+                for a in sub_audios:
+                    f.write(f"file '{Path(a).resolve()}'\n")
+            run([
+                "ffmpeg", "-y",
+                "-f", "concat", "-safe", "0",
+                "-i", str(liste),
+                "-c", "copy",
+                str(musique_path)
+            ])
     else:
         if comportement == "reset":
             print(f"  Audio : reset à chaque phase ({len(segments_durees)} phases)")

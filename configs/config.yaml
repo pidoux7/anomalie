@@ -181,6 +181,10 @@ audio:
   #                est dépassée.
   comportement: "continu"
 
+  # Fondu enchaîné entre morceaux (uniquement avec comportement: "enchaine")
+  # 0 ou absent = cut sec. Une valeur de 1.5-3 donne une transition douce.
+  # crossfade: 2.0
+
   # Comportement à chaque sous-segment (intervalle ou masque sequence/apparition)
   comportement_sous_segment: "continu"
 

@@ -45,6 +45,9 @@ audio:
     - { fichier: "musiques/winter.mp3", debut: "0:10", fin: "0:30" }
     # → 40s de playlist + bouclage = ~20s de spiral à nouveau pour atteindre 60s
 
+  # Fondu enchaîné entre morceaux (en secondes). 0 ou absent = cut sec.
+  crossfade: 2.0
+
   audio_source: "couper"
   volume_musique: 0.8
   fade_in: 0.5
