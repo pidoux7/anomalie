@@ -171,8 +171,14 @@ audio:
     # - { fichier: "musiques/album.mp3", aleatoire: true, duree: 120 }
 
   # Comportement à chaque changement de phase :
-  #   "reset"    : la musique reprend du début à chaque nouvelle phase
-  #   "continu"  : la musique tourne en boucle continue, ignore les changements
+  #   "reset"    : 1 morceau par phase vidéo (le n-ième morceau pour la
+  #                n-ième phase). Si moins de morceaux que de phases, le
+  #                dernier est répété.
+  #   "continu"  : 1 seul morceau en boucle sur toute la durée
+  #   "enchaine" : enchaîne tous les morceaux selon leur durée propre
+  #                (bornes debut/fin respectées). Boucle la liste si
+  #                la durée totale dépasse la playlist, tronque si elle
+  #                est dépassée.
   comportement: "continu"
 
   # Comportement à chaque sous-segment (intervalle ou masque sequence/apparition)

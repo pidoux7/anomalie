@@ -18,6 +18,27 @@ from . import config
 from .commun import run, get_duration, parser_timestamp
 
 
+def _duree_naturelle(entree_norm):
+    """
+    Durée que produira une entrée normalisée selon ses bornes :
+      - aleatoire+duree : la valeur de duree
+      - debut/fin       : fin - debut (ou jusqu'à la fin du fichier si fin
+                          absent, ou depuis 0 si debut absent)
+      - rien            : durée totale du fichier
+    """
+    fichier = entree_norm["fichier"]
+    if entree_norm.get("aleatoire"):
+        return entree_norm.get("duree") or get_duration(fichier)
+    debut = entree_norm.get("debut")
+    fin = entree_norm.get("fin")
+    if debut is None and fin is None:
+        return get_duration(fichier)
+    duree_fichier = get_duration(fichier)
+    debut_eff = debut if debut is not None else 0
+    fin_eff = fin if fin is not None else duree_fichier
+    return max(0.1, fin_eff - debut_eff)
+
+
 def normaliser_entree_audio(entree):
     """
     Convertit une entrée de la liste fichiers en dict avec fichier/debut/fin.
@@ -153,6 +174,38 @@ def construire_piste_audio(piste_path, segments_durees, video_a_audio_source=Non
     if comportement == "continu" and len(entrees) == 1:
         print(f"  Audio : 1 fichier en continu sur {duree_totale:.0f}s")
         preparer_extrait_audio(entrees[0], musique_path, duree_totale)
+    elif comportement == "enchaine":
+        # Enchaîne les fichiers selon leur durée propre (bornes debut/fin
+        # respectées). Si la playlist totale est plus courte que la vidéo,
+        # on boucle ; si plus longue, on tronque.
+        print(f"  Audio : enchaîne {len(entrees)} morceau(x) sur {duree_totale:.0f}s")
+        sub_audios = []
+        cumul = 0.0
+        slot = 0
+        while cumul < duree_totale - 0.05:
+            entree = entrees[slot % len(entrees)]
+            d_nat = _duree_naturelle(entree)
+            d_voulue = min(d_nat, duree_totale - cumul)
+            if d_voulue <= 0.05:
+                break
+            sub_path = config.WORK_DIR / f"audio_play_{slot:03d}.aac"
+            print(f"    [{slot}] {entree['fichier']} ({d_voulue:.1f}s)")
+            preparer_extrait_audio(entree, sub_path, d_voulue)
+            sub_audios.append(sub_path)
+            cumul += d_voulue
+            slot += 1
+
+        liste = config.WORK_DIR / "liste_audio.txt"
+        with open(liste, "w") as f:
+            for a in sub_audios:
+                f.write(f"file '{Path(a).resolve()}'\n")
+        run([
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", str(liste),
+            "-c", "copy",
+            str(musique_path)
+        ])
     else:
         if comportement == "reset":
             print(f"  Audio : reset à chaque phase ({len(segments_durees)} phases)")
