@@ -484,7 +484,10 @@ def construire_plan_scenario():
             sys.exit(1)
         duree_seq = _resolve_duree_seq(entry.get("duree"), duree_par_defaut)
         directives = _construire_directives(entry)
-        plan.append((num_phase, int(taille), duree_seq, directives))
+        # `repeter: N` duplique la séquence N fois dans le plan
+        repeter = max(1, int(entry.get("repeter", 1)))
+        for _ in range(repeter):
+            plan.append((num_phase, int(taille), duree_seq, directives))
 
     # En mode scenario on garde un seul num_phase logique sauf si auto a
     # incrémenté ; on conserve num_phase sur les séquences explicites
