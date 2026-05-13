@@ -17,13 +17,23 @@ Architecture :
     `lib/` (config, commun, masques, grille, effets, phases, audio).
 """
 
+import os
 import random
 import sys
 from pathlib import Path
 
 # Capture les flags CLI avant l'import de lib.config (qui lit sys.argv[1])
 AUDIO_ONLY = "--audio-only" in sys.argv
-sys.argv = [a for a in sys.argv if a != "--audio-only"]
+PREVIEW    = "--preview"    in sys.argv
+DRY_RUN    = "--dry-run"    in sys.argv
+sys.argv = [a for a in sys.argv if a not in ("--audio-only", "--preview", "--dry-run")]
+
+# Les flags qui modifient la config sont passés via env var pour que
+# lib.config les lise au moment de son chargement (côté import).
+if PREVIEW:
+    os.environ["ANOMALIE_PREVIEW"] = "1"
+if DRY_RUN:
+    os.environ["ANOMALIE_DRY_RUN"] = "1"
 
 from lib import config
 from lib.grille import preparer_video

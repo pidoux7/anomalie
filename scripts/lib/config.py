@@ -70,6 +70,25 @@ if Path(config_path).resolve() != Path(BASE_CONFIG).resolve():
     cfg = _deep_merge(cfg, cfg_override)
     print(f"[config] base={BASE_CONFIG} + override={config_path}")
 
+# Mode --preview : overrides après merge pour un rendu rapide
+PREVIEW_MODE = os.environ.get("ANOMALIE_PREVIEW") == "1"
+DRY_RUN_MODE = os.environ.get("ANOMALIE_DRY_RUN") == "1"
+
+if PREVIEW_MODE:
+    cfg["final_w"] = 1280
+    cfg["final_h"] = 720
+    cfg["preset_x264"] = "ultrafast"
+    cfg["crf"] = 28
+    cfg["mode_duree"] = "duree_max"
+    cfg["duree_max"] = 30
+    cfg["fin_partielle"] = "tronquer"
+    cfg.setdefault("performance", {})
+    cfg["performance"]["encodeur"] = "x264"  # ultrafast x264 = plus rapide
+    # Output dérivé pour ne pas écraser le rendu final
+    out_orig = Path(cfg.get("output_video", "videos/montage_final.mp4"))
+    cfg["output_video"] = str(out_orig.parent / (out_orig.stem + "_preview" + out_orig.suffix))
+    print(f"[preview] 1280x720, 30s max, output={cfg['output_video']}")
+
 INPUT_VIDEO    = cfg["input_video"]
 INPUT_ANOMALIE = cfg.get("input_anomalie")
 OUTPUT_VIDEO   = cfg["output_video"]
@@ -481,6 +500,21 @@ def construire_plan():
 
 
 PLAN = construire_plan()
+
+# En mode preview, on tronque le plan à 30s pour les scenarios
+# (duree_max n'agit que sur mode_plan: "auto")
+if PREVIEW_MODE:
+    plan_court = []
+    cumul = 0.0
+    for entry in PLAN:
+        if cumul >= 30:
+            break
+        np_, t_, d_, dirs_ = entry
+        d_eff = min(d_, 30 - cumul)
+        plan_court.append((np_, t_, d_eff, dirs_))
+        cumul += d_eff
+    PLAN = plan_court or PLAN[:1]  # au pire on garde 1 séquence
+
 NB_PHASES_PLAN = max(p[0] for p in PLAN)
 DUREE_TOTALE = sum(p[2] for p in PLAN)
 
