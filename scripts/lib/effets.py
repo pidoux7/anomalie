@@ -647,6 +647,64 @@ def creer_effet_audioreactif(video_source, taille, debut_source, duree,
 
 
 # ============================================================
+# Datamosh "soft" : tmix + bruit + compression agressive
+# ============================================================
+def creer_effet_datamosh(video_source, taille, debut_source, duree,
+                          output_path, cell_w, cell_h, pad_x, pad_y):
+    """
+    Glitch authentique sans manipulation bit-level :
+      - tmix : moyenne pondérée des N dernières frames (smearing temporel)
+      - noise : grain coloré qui suit le smearing
+      - encode libx264 -b:v très bas + GOP énorme → blocking + artifacts
+    """
+    cfg_d = config.EFFETS.get("datamosh", {})
+    traine  = max(2, int(cfg_d.get("traine", 8)))
+    bruit   = float(cfg_d.get("bruit", 15))
+    bitrate = str(cfg_d.get("bitrate", "300k"))
+
+    print(f"    [datamosh] traine={traine}, bruit={bruit}, bitrate={bitrate}")
+    mini = config.WORK_DIR / f"dm_mini_{taille}_{int(debut_source)}.mp4"
+    fabriquer_segment(video_source, mini, debut_source, duree, cell_w, cell_h)
+    grille = config.WORK_DIR / f"dm_grille_{taille}_{int(debut_source)}.mp4"
+    paths = [mini] * (taille * taille)
+    if (taille * taille) > 256:
+        assembler_grille_par_lignes(taille, paths, duree, grille, 0, 0)
+    else:
+        assembler_grille(taille, paths, duree, grille, 0, 0)
+
+    # Poids dégressifs (la frame courante est la plus faible → traînée
+    # dominée par les frames précédentes).
+    weights = " ".join(str(2 ** max(0, traine - i - 1)) for i in range(traine))
+    vf = f"tmix=frames={traine}:weights={weights}"
+    if bruit > 0:
+        vf += f",noise=alls={bruit}:allf=t+u"
+
+    out_path = config.WORK_DIR / f"dm_out_{taille}_{int(debut_source)}.mp4"
+    # Encode forcé libx264 pour pouvoir spécifier le bitrate bas + GOP long.
+    run([
+        "ffmpeg", "-y", "-i", str(grille),
+        "-vf", vf,
+        "-c:v", "libx264", "-b:v", bitrate,
+        "-g", "999", "-bf", "0", "-keyint_min", "999",
+        "-preset", "fast",
+        "-pix_fmt", "yuv420p",
+        "-t", str(duree),
+        str(out_path)
+    ])
+
+    if pad_x > 0 or pad_y > 0:
+        run([
+            "ffmpeg", "-y", "-i", str(out_path),
+            "-vf", f"pad={config.FINAL_W}:{config.FINAL_H}:{pad_x}:{pad_y}:black,setsar=1",
+            *config.args_encodage(),
+            "-pix_fmt", "yuv420p",
+            str(output_path)
+        ])
+    else:
+        out_path.rename(output_path)
+
+
+# ============================================================
 # Dispatcher
 # ============================================================
 def jouer_effet(nom_effet, video_source, video_anomalie_externe, taille,
@@ -680,6 +738,9 @@ def jouer_effet(nom_effet, video_source, video_anomalie_externe, taille,
     elif nom_effet == "audioreactif":
         creer_effet_audioreactif(video_source, taille, debut_source, duree,
                                   output_path, cell_w, cell_h, pad_x, pad_y)
+    elif nom_effet == "datamosh":
+        creer_effet_datamosh(video_source, taille, debut_source, duree,
+                              output_path, cell_w, cell_h, pad_x, pad_y)
     else:
         print(f"ERREUR : effet inconnu '{nom_effet}'")
         sys.exit(1)

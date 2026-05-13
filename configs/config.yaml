@@ -303,6 +303,13 @@ effets:
     # 4 : miroir vertical + horizontal (quart haut-gauche réfléchi 4 fois)
     secteurs: 4
 
+  # ============ CONFIG DATAMOSH ============
+  # Glitch "soft" : tmix temporel + bruit + compression agressive.
+  datamosh:
+    traine: 8         # nb frames mixées (smearing) — plus élevé = plus de traînée
+    bruit: 15         # grain temporel (0 = aucun, 50 = très visible)
+    bitrate: "300k"   # plus bas = plus d'artefacts de compression
+
   # ============ CONFIG AUDIO-RÉACTIF ============
   # Superpose une visualisation audio sur la grille (blend en screen).
   audioreactif:
