@@ -604,24 +604,24 @@ def creer_effet_kaleidoscope(video_source, taille, debut_source, duree,
 # ============================================================
 # Audio-réactif (visualisation audio superposée)
 # ============================================================
-def _rms_buckets(fichier_audio, duree, n_buckets, percentile=0.95, puissance=1.0):
+def _rms_buckets(fichier_audio, duree, n_buckets,
+                  debut=0, percentile=0.95, puissance=1.0, lissage=0):
     """
-    Extrait N valeurs RMS de l'audio sur la durée donnée, normalisées et
-    optionnellement accentuées.
+    Extrait N valeurs RMS de l'audio sur la durée donnée, normalisées,
+    accentuées et optionnellement lissées.
 
     Args:
-        percentile : utilisé pour la normalisation. 0.95 = la valeur du
-                     95e percentile est mappée à 1.0 ; tout au-dessus est
-                     clampé. Évite qu'un pic rare écrase le reste de la
-                     dynamique.
-        puissance  : exposant appliqué aux RMS normalisés (1 = linéaire,
-                     2 = accentue les pics et atténue les silences,
-                     0.5 = adoucit le contraste).
+        debut      : décalage en secondes dans le fichier audio (= -ss)
+        percentile : normalisation par percentile (0.95 = 95e perc → 1.0)
+        puissance  : exposant appliqué après normalisation (>1 = pics accentués)
+        lissage    : fenêtre de moyenne mobile autour de chaque bucket
+                     (0 = aucun, 2 = moyenne sur 5 buckets centrés)
     """
     import audioop
     import subprocess
     proc = subprocess.run(
         ["ffmpeg", "-hide_banner", "-loglevel", "error",
+         "-ss", str(debut),
          "-i", fichier_audio, "-t", str(duree),
          "-f", "s16le", "-ac", "1", "-ar", "44100", "-"],
         capture_output=True
@@ -651,6 +651,14 @@ def _rms_buckets(fichier_audio, duree, n_buckets, percentile=0.95, puissance=1.0
     # Puissance : accentue ou adoucit les contrastes
     if puissance != 1.0:
         rms = [r ** puissance for r in rms]
+
+    # Lissage : moyenne mobile centrée
+    if lissage > 0:
+        lisse = []
+        for i in range(len(rms)):
+            window = rms[max(0, i - lissage):min(len(rms), i + lissage + 1)]
+            lisse.append(sum(window) / len(window))
+        rms = lisse
 
     return rms
 
@@ -979,30 +987,48 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
     mod_aber = float(cfg_la.get("mod_aberration", 1.0))
     puissance = float(cfg_la.get("puissance", 2.0))
     percentile = float(cfg_la.get("percentile", 0.9))
+    lissage = int(cfg_la.get("lissage", 1))
+    debut_audio = parser_timestamp(cfg_la.get("debut", 0)) or 0
+    teinte_aleatoire = float(cfg_la.get("teinte_aleatoire", 30))
+    frequence_aleatoire = float(cfg_la.get("frequence_aleatoire", 1.5))
 
     cfg_lsd_base = dict(config.EFFETS.get("lsd", {}))
     amp_base = float(cfg_lsd_base.get("amplitude_onde", 120))
     vit_base = float(cfg_lsd_base.get("vitesse_onde", 0.4))
     sat_base = float(cfg_lsd_base.get("saturation", 2.5))
     aber_base = int(cfg_lsd_base.get("aberration", 8))
+    teinte_base = float(cfg_lsd_base.get("teinte", 240))
+    freq_base = float(cfg_lsd_base.get("frequence_onde", 8))
 
     rms = _rms_buckets(fichier_audio, duree, n_buckets,
-                       percentile=percentile, puissance=puissance)
+                       debut=debut_audio,
+                       percentile=percentile, puissance=puissance,
+                       lissage=lissage)
     duree_bucket = duree / n_buckets
 
     print(f"    [lsd_audio] {n_buckets} buckets × {duree_bucket:.2f}s, "
-          f"percentile={percentile}, puissance={puissance}, "
-          f"audio={fichier_audio}")
+          f"audio={fichier_audio} @ {debut_audio}s, "
+          f"perc={percentile}, puiss={puissance}, lissage={lissage}")
+
+    # RNG seedé pour reproductibilité entre runs (mais aléatoire par bucket)
+    import random as _rnd
+    seeded = _rnd.Random(f"lsd_audio|{fichier_audio}|{int(debut_audio)}")
+    variations = [(seeded.uniform(-teinte_aleatoire, teinte_aleatoire),
+                   seeded.uniform(-frequence_aleatoire, frequence_aleatoire))
+                  for _ in range(n_buckets)]
 
     segments = []
     try:
         for i, rms_val in enumerate(rms):
+            d_teinte, d_freq = variations[i]
             config.EFFETS["lsd"] = {
                 **cfg_lsd_base,
                 "amplitude_onde": amp_base * (1 + mod_amp * rms_val),
                 "vitesse_onde":   vit_base * (1 + mod_vit * rms_val),
                 "saturation":     sat_base * (1 + mod_sat * rms_val),
                 "aberration":     max(1, int(aber_base * (1 + mod_aber * rms_val))),
+                "teinte":         (teinte_base + d_teinte) % 360,
+                "frequence_onde": max(1.0, freq_base + d_freq),
             }
             seg = (config.WORK_DIR
                    / f"lsd_audio_{taille}_{int(debut_source)}_{i:04d}.mp4")
