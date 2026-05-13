@@ -604,12 +604,19 @@ def creer_effet_kaleidoscope(video_source, taille, debut_source, duree,
 # ============================================================
 # Audio-réactif (visualisation audio superposée)
 # ============================================================
-def _rms_buckets(fichier_audio, duree, n_buckets):
+def _rms_buckets(fichier_audio, duree, n_buckets, percentile=0.95, puissance=1.0):
     """
-    Extrait N valeurs RMS normalisées de l'audio sur la durée donnée.
-    Utilise ffmpeg pour décoder en PCM s16 mono 44.1kHz, puis audioop
-    pour calculer le RMS par bucket. Renvoie une liste de N floats dans
-    [0, 1] (0 = silence, 1 = pic du segment analysé).
+    Extrait N valeurs RMS de l'audio sur la durée donnée, normalisées et
+    optionnellement accentuées.
+
+    Args:
+        percentile : utilisé pour la normalisation. 0.95 = la valeur du
+                     95e percentile est mappée à 1.0 ; tout au-dessus est
+                     clampé. Évite qu'un pic rare écrase le reste de la
+                     dynamique.
+        puissance  : exposant appliqué aux RMS normalisés (1 = linéaire,
+                     2 = accentue les pics et atténue les silences,
+                     0.5 = adoucit le contraste).
     """
     import audioop
     import subprocess
@@ -631,8 +638,21 @@ def _rms_buckets(fichier_audio, duree, n_buckets):
         end = min(start + bytes_per_b, len(pcm))
         chunk = pcm[start:end]
         rms_vals.append(audioop.rms(chunk, 2) if chunk else 0)
-    mx = max(rms_vals) or 1
-    return [r / mx for r in rms_vals]
+
+    # Normalisation par percentile (au lieu du max strict)
+    if any(rms_vals):
+        sorted_vals = sorted(rms_vals)
+        idx = max(0, min(len(sorted_vals) - 1, int(len(sorted_vals) * percentile)))
+        pivot = sorted_vals[idx] or max(rms_vals)
+        rms = [min(1.0, r / pivot) for r in rms_vals]
+    else:
+        rms = [0.0] * len(rms_vals)
+
+    # Puissance : accentue ou adoucit les contrastes
+    if puissance != 1.0:
+        rms = [r ** puissance for r in rms]
+
+    return rms
 
 
 def creer_effet_audioreactif(video_source, taille, debut_source, duree,
@@ -694,10 +714,14 @@ def creer_effet_audioreactif(video_source, taille, debut_source, duree,
         # Buckets : par défaut 5 par seconde (= 200 ms de résolution),
         # suffisant pour suivre le rythme sans expression trop grosse.
         n_buckets = int(cfg_ar.get("buckets") or max(10, int(duree * 5)))
+        puissance = float(cfg_ar.get("puissance", 2.0))
+        percentile = float(cfg_ar.get("percentile", 0.9))
 
         print(f"    [audioreactif/rms] analyse {fichier_audio}, "
-              f"{n_buckets} buckets, intensite={intensite}")
-        rms = _rms_buckets(fichier_audio, duree, n_buckets)
+              f"{n_buckets} buckets, intensite={intensite}, "
+              f"puissance={puissance}")
+        rms = _rms_buckets(fichier_audio, duree, n_buckets,
+                            percentile=percentile, puissance=puissance)
 
         # Construit l'expression imbriquée : à chaque seuil de frame, le
         # zoom correspond à 1 + intensite * rms[i].
@@ -947,11 +971,14 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
         print(f"ERREUR lsd_audio : fichier audio introuvable : {fichier_audio}")
         sys.exit(1)
 
-    n_buckets = int(cfg_la.get("buckets") or max(2, int(duree)))
+    # 4 buckets / seconde par défaut → suit les beats à 120 BPM (2/s)
+    n_buckets = int(cfg_la.get("buckets") or max(4, int(duree * 4)))
     mod_amp = float(cfg_la.get("mod_amplitude", 1.0))
     mod_vit = float(cfg_la.get("mod_vitesse", 0.5))
     mod_sat = float(cfg_la.get("mod_saturation", 0.5))
     mod_aber = float(cfg_la.get("mod_aberration", 1.0))
+    puissance = float(cfg_la.get("puissance", 2.0))
+    percentile = float(cfg_la.get("percentile", 0.9))
 
     cfg_lsd_base = dict(config.EFFETS.get("lsd", {}))
     amp_base = float(cfg_lsd_base.get("amplitude_onde", 120))
@@ -959,10 +986,12 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
     sat_base = float(cfg_lsd_base.get("saturation", 2.5))
     aber_base = int(cfg_lsd_base.get("aberration", 8))
 
-    rms = _rms_buckets(fichier_audio, duree, n_buckets)
+    rms = _rms_buckets(fichier_audio, duree, n_buckets,
+                       percentile=percentile, puissance=puissance)
     duree_bucket = duree / n_buckets
 
     print(f"    [lsd_audio] {n_buckets} buckets × {duree_bucket:.2f}s, "
+          f"percentile={percentile}, puissance={puissance}, "
           f"audio={fichier_audio}")
 
     segments = []

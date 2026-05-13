@@ -25,14 +25,20 @@ effets:
     lignes_force: 0.5
     lignes_mode: "edges"
 
-  # Phase 1 : modulation modérée (warm-up)
   lsd_audio:
     fichier: "musiques/spiral.mp3"
-    buckets: null            # 1/s, suffisant pour suivre le rythme
-    mod_amplitude: 2.5       # pic → amp = 60 × 3.5 = 210
+    buckets: null            # défaut 4/s — suit les beats
+    # puissance > 1 accentue les pics, atténue les silences :
+    # rms=0.5 → 0.5² = 0.25 (l'effet ne se déclenche que sur les vrais pics)
+    puissance: 2.5
+    # percentile : la valeur du Xe percentile = 1.0 en RMS normalisé.
+    # 0.85 = on map les 15% des plus gros pics à pleine intensité ;
+    # plus bas = effet plus présent, plus haut = plus parcimonieux.
+    percentile: 0.85
+    mod_amplitude: 3.0       # pic → amp = 60 × 4 = 240
     mod_vitesse: 1.0         # pic → vit = 0.25 × 2 = 0.5 (rapide)
     mod_saturation: 1.5      # pic → sat = 1.2 × 2.5 = 3.0
-    mod_aberration: 3.0      # pic → aber = 2 × 4 = 8
+    mod_aberration: 4.0      # pic → aber = 2 × 5 = 10
 
 # Audio : mode enchaine pour avoir musique sur toute la durée
 audio:
