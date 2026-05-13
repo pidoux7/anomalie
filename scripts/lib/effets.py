@@ -604,25 +604,59 @@ def creer_effet_kaleidoscope(video_source, taille, debut_source, duree,
 # ============================================================
 # Audio-réactif (visualisation audio superposée)
 # ============================================================
+def _rms_buckets(fichier_audio, duree, n_buckets):
+    """
+    Extrait N valeurs RMS normalisées de l'audio sur la durée donnée.
+    Utilise ffmpeg pour décoder en PCM s16 mono 44.1kHz, puis audioop
+    pour calculer le RMS par bucket. Renvoie une liste de N floats dans
+    [0, 1] (0 = silence, 1 = pic du segment analysé).
+    """
+    import audioop
+    import subprocess
+    proc = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error",
+         "-i", fichier_audio, "-t", str(duree),
+         "-f", "s16le", "-ac", "1", "-ar", "44100", "-"],
+        capture_output=True
+    )
+    pcm = proc.stdout
+    n_samples = len(pcm) // 2
+    if n_samples == 0:
+        return [0.0] * n_buckets
+    samples_per_b = max(1, n_samples // n_buckets)
+    bytes_per_b = samples_per_b * 2
+    rms_vals = []
+    for i in range(n_buckets):
+        start = i * bytes_per_b
+        end = min(start + bytes_per_b, len(pcm))
+        chunk = pcm[start:end]
+        rms_vals.append(audioop.rms(chunk, 2) if chunk else 0)
+    mx = max(rms_vals) or 1
+    return [r / mx for r in rms_vals]
+
+
 def creer_effet_audioreactif(video_source, taille, debut_source, duree,
                               output_path, cell_w, cell_h, pad_x, pad_y):
     """
-    Audio-réactif : 3 modes.
-      - "pulse"    : la grille pulse (zoom variable) selon un BPM donné.
-                     L'image bouge, c'est ce qu'on perçoit comme réactif.
-      - "waves"    : superpose une forme d'onde (visualisation overlay)
-      - "spectrum" : superpose un spectre CQT
+    Audio-réactif : 4 modes.
+      - "rms"      : vraiment audio-réactif — analyse le RMS du fichier
+                     audio par tranches et applique un zoom proportionnel.
+      - "pulse"    : zoom pulsé synthétique selon un BPM donné (pas de
+                     vraie analyse audio, juste un rythme constant).
+      - "waves"    : forme d'onde overlay
+      - "spectrum" : spectre CQT overlay
     Paramètres dans effets.audioreactif :
-        mode      : "pulse" | "waves" | "spectrum"
+        mode      : "rms" | "pulse" | "waves" | "spectrum"
+        fichier   : audio à analyser/visualiser
+        intensite : amplitude du zoom (mode rms/pulse, default 0.3)
+        rotation  : rad/s additionnels (rms/pulse, default 0)
+        buckets   : nb tranches d'analyse RMS (mode rms, default = duree*5)
         bpm       : pulsations par minute (mode pulse, default 120)
-        intensite : amplitude du zoom (mode pulse, default 0.2)
-        rotation  : rad/s additionnels (mode pulse, default 0)
-        fichier   : audio à visualiser (waves/spectrum)
         opacite   : 0-1, force de la superposition (waves/spectrum)
         couleur   : couleur du tracé (waves uniquement)
     """
     cfg_ar = config.EFFETS.get("audioreactif", {})
-    mode = cfg_ar.get("mode", "pulse")
+    mode = cfg_ar.get("mode", "rms")
 
     grid_w = cell_w * taille
     grid_h = cell_h * taille
@@ -639,7 +673,59 @@ def creer_effet_audioreactif(video_source, taille, debut_source, duree,
 
     out_path = config.WORK_DIR / f"ar_out_{taille}_{int(debut_source)}.mp4"
 
-    if mode == "pulse":
+    def _audio_par_defaut():
+        fichiers = config.AUDIO.get("fichiers", []) or []
+        for f0 in fichiers:
+            chemin = f0 if isinstance(f0, str) else f0.get("fichier")
+            if chemin and Path(chemin).exists():
+                return chemin
+        return None
+
+    if mode == "rms":
+        # Vrai audio-réactif : on analyse le RMS du fichier audio par
+        # tranches, puis on construit une expression zoompan qui mappe
+        # le numéro de frame à la valeur RMS correspondante.
+        fichier_audio = cfg_ar.get("fichier") or _audio_par_defaut()
+        if not fichier_audio or not Path(fichier_audio).exists():
+            print(f"ERREUR audioreactif/rms : fichier audio introuvable : {fichier_audio}")
+            sys.exit(1)
+        intensite = float(cfg_ar.get("intensite", 0.3))
+        rotation = float(cfg_ar.get("rotation", 0.0))
+        # Buckets : par défaut 5 par seconde (= 200 ms de résolution),
+        # suffisant pour suivre le rythme sans expression trop grosse.
+        n_buckets = int(cfg_ar.get("buckets") or max(10, int(duree * 5)))
+
+        print(f"    [audioreactif/rms] analyse {fichier_audio}, "
+              f"{n_buckets} buckets, intensite={intensite}")
+        rms = _rms_buckets(fichier_audio, duree, n_buckets)
+
+        # Construit l'expression imbriquée : à chaque seuil de frame, le
+        # zoom correspond à 1 + intensite * rms[i].
+        # On part de la fin (dernière valeur) et on enroule.
+        bucket_frames = (30.0 * duree) / n_buckets
+        expr = f"1+{intensite}*{rms[-1]:.4f}"
+        for i in range(n_buckets - 2, -1, -1):
+            seuil = (i + 1) * bucket_frames
+            expr = (f"if(lt(on,{seuil:.0f}),"
+                    f"1+{intensite}*{rms[i]:.4f},{expr})")
+
+        fc = f"[0:v]zoompan=z='{expr}':d=1:s={grid_w}x{grid_h}:fps=30[zoomed]"
+        if rotation != 0:
+            fc += f";[zoomed]rotate={rotation}*t:c=black:ow={grid_w}:oh={grid_h}[v]"
+            map_label = "[v]"
+        else:
+            map_label = "[zoomed]"
+
+        run([
+            "ffmpeg", "-y", "-i", str(grille),
+            "-filter_complex", fc,
+            "-map", map_label,
+            "-t", str(duree),
+            *config.args_encodage(),
+            "-pix_fmt", "yuv420p",
+            str(out_path)
+        ])
+    elif mode == "pulse":
         bpm = float(cfg_ar.get("bpm", 120))
         intensite = float(cfg_ar.get("intensite", 0.2))
         rotation = float(cfg_ar.get("rotation", 0.0))

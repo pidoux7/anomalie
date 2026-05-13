@@ -319,18 +319,21 @@ effets:
     bitrate: "300k"   # plus bas = plus d'artefacts de compression
 
   # ============ CONFIG AUDIO-RÉACTIF ============
-  # 3 modes : l'image bouge (pulse) ou une viz est superposée (waves/spectrum).
+  # 4 modes : "rms" est le vrai audio-réactif (analyse le fichier audio).
   audioreactif:
-    # "pulse"    : zoom + rotation pulsés selon un BPM (image entière bouge)
+    # "rms"      : zoom basé sur l'analyse RMS réelle du fichier audio
+    # "pulse"    : zoom pulsé synthétique sur un BPM (pas d'analyse)
     # "waves"    : forme d'onde superposée
     # "spectrum" : spectre CQT superposé
-    mode: "pulse"
-    # --- Mode pulse ---
+    mode: "rms"
+    # --- Mode rms (vrai audio-réactif) ---
+    fichier: null         # audio à analyser (défaut : 1er de audio.fichiers)
+    intensite: 0.3        # amplitude du zoom (0 = aucun, 0.5 = ample)
+    rotation: 0.0         # rotation continue ajoutée (rad/s)
+    buckets: null         # tranches d'analyse (défaut : 5/seconde)
+    # --- Mode pulse (rythme synthétique) ---
     bpm: 120              # pulsations par minute
-    intensite: 0.2        # amplitude du zoom (0 = aucun, 0.5 = ample)
-    rotation: 0.0         # rotation continue ajoutée (rad/s, 0 = aucune)
-    # --- Modes waves / spectrum ---
-    fichier: null         # audio à visualiser (défaut : 1er de audio.fichiers)
+    # --- Modes waves / spectrum (overlay) ---
     opacite: 0.6
     couleur: "white"
 

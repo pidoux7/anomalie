@@ -75,10 +75,10 @@ audio:
   fichiers: ["musiques/spiral.mp3"]
 effets:
   audioreactif:
-    mode: "pulse"
-    bpm: 120
-    intensite: 0.25
-    rotation: 0.1
+    mode: "rms"
+    fichier: "musiques/spiral.mp3"
+    intensite: 0.4
+    rotation: 0.0
 mode_plan: "scenario"
 scenario:
   sequences:
