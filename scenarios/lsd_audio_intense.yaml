@@ -1,0 +1,63 @@
+# ============================================================
+# Scenario "lsd_audio_intense" : démo de lsd_audio à fort dosage
+# 4 phases qui montent en intensité, ~40s au total.
+#
+# Lancement :
+#     python3 scripts/montage_grille.py scenarios/lsd_audio_intense.yaml --preview
+#     python3 scripts/montage_grille.py scenarios/lsd_audio_intense.yaml
+# ============================================================
+
+output_video: "videos/lsd_audio_intense.mp4"
+input_anomalie: null
+max_cases: 1024              # autorise les phases 16/32
+masques: { actif: false }
+
+# Base LSD assez calme — la modulation va l'amener au max
+effets:
+  lsd:
+    amplitude_onde: 60       # pic ≈ amp × (1 + mod_amp × rms)
+    vitesse_onde: 0.25
+    frequence_onde: 8
+    aberration: 2
+    saturation: 1.2
+    teinte: 240
+    bruit: 35                # grain plus visible
+    lignes_force: 0.5
+    lignes_mode: "edges"
+
+  # Phase 1 : modulation modérée (warm-up)
+  lsd_audio:
+    fichier: "musiques/spiral.mp3"
+    buckets: null            # 1/s, suffisant pour suivre le rythme
+    mod_amplitude: 2.5       # pic → amp = 60 × 3.5 = 210
+    mod_vitesse: 1.0         # pic → vit = 0.25 × 2 = 0.5 (rapide)
+    mod_saturation: 1.5      # pic → sat = 1.2 × 2.5 = 3.0
+    mod_aberration: 3.0      # pic → aber = 2 × 4 = 8
+
+# Audio : mode enchaine pour avoir musique sur toute la durée
+audio:
+  actif: true
+  mode: "auto"
+  comportement: "continu"
+  fichiers: ["musiques/spiral.mp3"]
+  audio_source: "couper"
+  volume_musique: 0.8
+
+mode_plan: "scenario"
+scenario:
+  duree_par_defaut: 10
+  sequences:
+    # Phase 1 — taille 16, lsd_audio modéré
+    - { taille: 16, effet: "lsd_audio", duree: 10 }
+
+    # Phase 2 — taille 32, plus de cellules = grain plus fin
+    - { taille: 32, effet: "lsd_audio", duree: 10 }
+
+    # Phase 3 — alterne avec audioreactif pulse (zoom pulsé en plus)
+    - { taille: 32, effet: "audioreactif", duree: 5 }
+
+    # Phase 4 — taille 16, on revient sur lsd_audio pour le climax
+    - { taille: 16, effet: "lsd_audio", duree: 10 }
+
+    # Outro courte sans effet
+    - { taille: 4, aleatoire: true, anomalies: 3, duree: 3 }
