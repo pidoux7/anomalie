@@ -477,6 +477,45 @@ def construire_plan_scenario():
                 plan.append((num_phase, taille_t, duree_palier, directives))
             continue
 
+        # Bloc interpolation : déplie en N paliers avec interpolation
+        # linéaire d'un ou plusieurs paramètres d'effet.
+        if entry.get("type") == "interpolation":
+            taille_i = int(entry["taille"])
+            n_paliers = int(entry.get("paliers", 10))
+            duree_totale_i = float(
+                entry.get("duree_totale")
+                or (_resolve_duree_seq(entry.get("duree"), duree_par_defaut)
+                    * n_paliers)
+            )
+            duree_palier_i = duree_totale_i / n_paliers
+            parametres = entry.get("parametres", {})
+            if not isinstance(parametres, dict) or not parametres:
+                print(f"ERREUR scenario : interpolation sans 'parametres' : {entry}")
+                sys.exit(1)
+
+            champs_communs = {
+                k: v for k, v in entry.items()
+                if k not in ("type", "taille", "paliers", "duree_totale",
+                             "duree", "parametres")
+            }
+
+            for k in range(n_paliers):
+                frac = k / max(1, n_paliers - 1)
+                params_palier = {}
+                for nom_p, plage in parametres.items():
+                    if not isinstance(plage, (list, tuple)) or len(plage) != 2:
+                        print(f"ERREUR scenario : '{nom_p}' doit être [de, a]")
+                        sys.exit(1)
+                    de, a = float(plage[0]), float(plage[1])
+                    params_palier[nom_p] = de + (a - de) * frac
+                sub_entry = dict(champs_communs)
+                sub_entry["taille"] = taille_i
+                sub_entry["duree"] = duree_palier_i
+                directives = _construire_directives(sub_entry)
+                directives["effet_params"] = params_palier
+                plan.append((num_phase, taille_i, duree_palier_i, directives))
+            continue
+
         # Séquence explicite
         taille = entry.get("taille")
         if taille is None:

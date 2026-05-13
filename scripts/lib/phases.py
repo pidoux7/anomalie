@@ -76,9 +76,21 @@ def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
 
     # Effet pleine grille ?
     if "effet" in directives:
-        jouer_effet(directives["effet"], video_eff, video_anomalie_externe,
-                     taille, debut_eff, duree_phase, output_path,
-                     cell_w, cell_h, pad_x, pad_y)
+        nom_effet = directives["effet"]
+        # Override temporaire des params d'effet (utilisé par
+        # type: "interpolation" qui passe effet_params interpolés).
+        effet_params = directives.get("effet_params") or {}
+        backup = None
+        if effet_params and nom_effet in config.EFFETS:
+            backup = dict(config.EFFETS[nom_effet])
+            config.EFFETS[nom_effet] = {**backup, **effet_params}
+        try:
+            jouer_effet(nom_effet, video_eff, video_anomalie_externe,
+                         taille, debut_eff, duree_phase, output_path,
+                         cell_w, cell_h, pad_x, pad_y)
+        finally:
+            if backup is not None:
+                config.EFFETS[nom_effet] = backup
         return
 
     # Masque ad-hoc (chemin d'image fourni explicitement) ?
