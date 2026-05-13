@@ -303,6 +303,13 @@ effets:
     # 4 : miroir vertical + horizontal (quart haut-gauche réfléchi 4 fois)
     secteurs: 4
 
+  # ============ CONFIG ROTATION ============
+  # Grille pleine zoomée + rotation continue.
+  rotation:
+    vitesse: 0.2      # rad/s (0.1 = très lent, 1.0 = rapide)
+    zoom: 1.4         # facteur de zoom statique pour cacher les bords noirs
+    sens: "horaire"   # "horaire" | "anti"
+
   # ============ CONFIG DATAMOSH ============
   # Glitch "soft" : tmix temporel + bruit + compression agressive.
   datamosh:

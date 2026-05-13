@@ -705,6 +705,68 @@ def creer_effet_datamosh(video_source, taille, debut_source, duree,
 
 
 # ============================================================
+# Rotation + zoom statique de la grille
+# ============================================================
+def creer_effet_rotation(video_source, taille, debut_source, duree,
+                          output_path, cell_w, cell_h, pad_x, pad_y):
+    """
+    La grille pleine est zoomée (constant) puis tourne autour du centre.
+    Le zoom constant sert à cacher les bords noirs qui apparaîtraient
+    sinon dans les coins quand on tourne (un cercle inscrit dans le
+    carré ne couvre pas les coins).
+
+    Paramètres :
+      - vitesse  : vitesse angulaire en rad/s (0.1 = lent, 1.0 = rapide)
+      - zoom     : facteur de zoom statique (1.0 = aucun, 1.5 = +50%)
+      - sens     : "horaire" ou "anti" (anti-horaire)
+    """
+    cfg_r = config.EFFETS.get("rotation", {})
+    vitesse = float(cfg_r.get("vitesse", 0.2))
+    zoom = float(cfg_r.get("zoom", 1.4))
+    sens = cfg_r.get("sens", "horaire")
+
+    signe = -1 if sens == "anti" else 1
+
+    grid_w = cell_w * taille
+    grid_h = cell_h * taille
+
+    print(f"    [rotation] vitesse={vitesse} rad/s, zoom={zoom}, sens={sens}")
+    mini = config.WORK_DIR / f"rot_mini_{taille}_{int(debut_source)}.mp4"
+    fabriquer_segment(video_source, mini, debut_source, duree, cell_w, cell_h)
+    grille = config.WORK_DIR / f"rot_grille_{taille}_{int(debut_source)}.mp4"
+    paths = [mini] * (taille * taille)
+    if (taille * taille) > 256:
+        assembler_grille_par_lignes(taille, paths, duree, grille, 0, 0)
+    else:
+        assembler_grille(taille, paths, duree, grille, 0, 0)
+
+    vf = (f"scale=iw*{zoom}:ih*{zoom},"
+          f"crop={grid_w}:{grid_h},"
+          f"rotate={signe}*{vitesse}*t:c=black:ow={grid_w}:oh={grid_h}")
+
+    out_path = config.WORK_DIR / f"rot_out_{taille}_{int(debut_source)}.mp4"
+    run([
+        "ffmpeg", "-y", "-i", str(grille),
+        "-vf", vf,
+        "-t", str(duree),
+        *config.args_encodage(),
+        "-pix_fmt", "yuv420p",
+        str(out_path)
+    ])
+
+    if pad_x > 0 or pad_y > 0:
+        run([
+            "ffmpeg", "-y", "-i", str(out_path),
+            "-vf", f"pad={config.FINAL_W}:{config.FINAL_H}:{pad_x}:{pad_y}:black,setsar=1",
+            *config.args_encodage(),
+            "-pix_fmt", "yuv420p",
+            str(output_path)
+        ])
+    else:
+        out_path.rename(output_path)
+
+
+# ============================================================
 # Dispatcher
 # ============================================================
 def jouer_effet(nom_effet, video_source, video_anomalie_externe, taille,
@@ -740,6 +802,9 @@ def jouer_effet(nom_effet, video_source, video_anomalie_externe, taille,
                                   output_path, cell_w, cell_h, pad_x, pad_y)
     elif nom_effet == "datamosh":
         creer_effet_datamosh(video_source, taille, debut_source, duree,
+                              output_path, cell_w, cell_h, pad_x, pad_y)
+    elif nom_effet == "rotation":
+        creer_effet_rotation(video_source, taille, debut_source, duree,
                               output_path, cell_w, cell_h, pad_x, pad_y)
     else:
         print(f"ERREUR : effet inconnu '{nom_effet}'")
