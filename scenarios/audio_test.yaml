@@ -46,12 +46,12 @@ audio:
     # → 40s de playlist + bouclage = ~20s de spiral à nouveau pour atteindre 60s
 
   # Fondu enchaîné entre morceaux (en secondes). 0 ou absent = cut sec.
-  crossfade: 2.0
+  crossfade: 5.0
 
   audio_source: "couper"
   volume_musique: 0.8
-  fade_in: 0.5
-  fade_out: 1.0
+  fade_in: 4
+  fade_out: 4
 
   # Champs requis du mode auto même s'ils ne servent pas en "enchaine"
   comportement_sous_segment: "continu"
