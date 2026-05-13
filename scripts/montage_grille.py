@@ -104,8 +104,31 @@ def _ajouter_audio(video_temp):
     muxer_audio_video(video_temp, piste_audio, config.OUTPUT_VIDEO)
 
 
+def _afficher_dry_run():
+    """Imprime le plan complet calculé sans rien rendre."""
+    print(f"\n=== Mode --dry-run : plan complet, aucun rendu ===\n")
+    print(f"{'#':>3}  {'phase':>5}  {'taille':>6}  {'durée':>7}  "
+          f"{'cumul':>7}  directives")
+    print(f"{'-'*3}  {'-'*5}  {'-'*6}  {'-'*7}  {'-'*7}  {'-'*30}")
+    cumul = 0.0
+    for i, (np, t, d, dirs) in enumerate(config.PLAN, 1):
+        cumul += d
+        keys = ", ".join(sorted(dirs.keys())) if dirs else "—"
+        print(f"{i:>3}  {np:>5}  {t:>6}  {d:>6.1f}s  {cumul:>6.1f}s  {keys}")
+    print(f"\nTotal : {len(config.PLAN)} séquences, "
+          f"{config.DUREE_TOTALE:.1f}s ({config.DUREE_TOTALE/60:.2f} min)")
+    print(f"Output prévu : {config.OUTPUT_VIDEO}")
+    if config.AUDIO_ACTIF:
+        print(f"Audio : mode {config.AUDIO_MODE}, comportement "
+              f"{config.AUDIO.get('comportement')}")
+
+
 def main():
     config.afficher_resume()
+
+    if DRY_RUN:
+        _afficher_dry_run()
+        return
 
     video_temp = config.WORK_DIR / "video_sans_audio.mp4"
 
