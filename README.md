@@ -116,6 +116,38 @@ scenario:
       taille: 64
       video: "videos/video_b.mp4"   # vidéo de fond
       duree_totale: 30              # input_anomalie = vidéo qui apparaît
+
+    # Bloc rampe : montée/descente de tailles (puissances de 2) avec
+    # directives communes héritées sur chaque étage.
+    - type: "rampe"
+      taille_de: 1
+      taille_a: 32
+      duree_par_taille: 3
+      aleatoire: true
+      anomalies: 5
+
+    # Bloc interpolation : animer un paramètre d'effet sur N paliers
+    - type: "interpolation"
+      taille: 32
+      effet: "lsd"
+      duree_totale: 30
+      paliers: 15
+      parametres:
+        amplitude_onde: [10, 200]   # interpolation linéaire
+        saturation: [1.0, 4.0]
+```
+
+**Flags CLI utiles :**
+
+```bash
+# Rendu rapide 1280x720 / 30s pour itérer
+python3 scripts/montage_grille.py scenarios/sequence.yaml --preview
+
+# Affiche le plan calculé sans rien rendre (validation rapide d'un scenario)
+python3 scripts/montage_grille.py scenarios/sequence.yaml --dry-run
+
+# Refait juste l'audio à partir d'un rendu vidéo précédent
+python3 scripts/montage_grille.py scenarios/sequence.yaml --audio-only
 ```
 
 **Champs d'une séquence :**
@@ -226,12 +258,17 @@ cellule). On les appelle de **deux manières** :
 - **Mode scenario** : `effet: "<nom>"` dans une séquence
   `scenario.sequences` (override la phase entière).
 
-| Effet            | Description                                                                  |
-|------------------|------------------------------------------------------------------------------|
-| `mosaique`       | Grille modulée par une vidéo "carte" (luminance pixel = luminance cellule)   |
-| `mur_moniteurs`  | Chaque cellule joue une vidéo différente tirée d'une liste                   |
-| `lsd`            | Grille + distorsion ondulatoire + aberration chromatique + saturation        |
-| `masque`         | Les cellules anomales dessinent un motif depuis une image (cf. ci-dessous)   |
+| Effet                | Description                                                                  |
+|----------------------|------------------------------------------------------------------------------|
+| `mosaique`           | Grille modulée par une vidéo "carte" (luminance pixel = luminance cellule)   |
+| `mur_moniteurs`      | Chaque cellule joue une vidéo différente tirée d'une liste                   |
+| `lsd`                | Grille + distorsion ondulatoire + aberration chromatique + saturation        |
+| `kaleidoscope`       | Grille réfléchie en symétrie miroir (2 ou 4 secteurs)                        |
+| `rotation`           | Grille zoomée qui tourne autour du centre (vitesse + sens réglables)         |
+| `audioreactif`       | Superpose une visualisation (waveform/spectre) sur la grille                 |
+| `datamosh`           | Smearing temporel + bruit + compression agressive (look glitch)              |
+| `transition_smooth`  | Apparition cellule-par-cellule de la vidéo A sur la vidéo B via mask animé   |
+| `masque`             | Les cellules anomales dessinent un motif depuis une image (cf. ci-dessous)   |
 
 ### `mosaique`
 

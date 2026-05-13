@@ -477,6 +477,42 @@ def construire_plan_scenario():
                 plan.append((num_phase, taille_t, duree_palier, directives))
             continue
 
+        # Bloc rampe : montée ou descente de tailles (puissances de 2)
+        # avec une durée par étage et directives communes.
+        if entry.get("type") == "rampe":
+            t_de = int(entry["taille_de"])
+            t_a = int(entry["taille_a"])
+            duree_par = float(
+                entry.get("duree_par_taille")
+                or _resolve_duree_seq(entry.get("duree"), duree_par_defaut)
+            )
+            tailles = []
+            if t_de <= t_a:
+                t = t_de
+                while t <= t_a:
+                    tailles.append(t)
+                    t *= 2 if t > 0 else 1
+                    if t == 0:
+                        break
+            else:
+                t = t_de
+                while t >= t_a and t >= 1:
+                    tailles.append(t)
+                    t //= 2
+
+            champs_communs = {
+                k: v for k, v in entry.items()
+                if k not in ("type", "taille_de", "taille_a",
+                             "duree_par_taille", "duree")
+            }
+            for t in tailles:
+                sub = dict(champs_communs)
+                sub["taille"] = t
+                sub["duree"] = duree_par
+                directives = _construire_directives(sub)
+                plan.append((num_phase, t, duree_par, directives))
+            continue
+
         # Bloc interpolation : déplie en N paliers avec interpolation
         # linéaire d'un ou plusieurs paramètres d'effet.
         if entry.get("type") == "interpolation":
