@@ -318,6 +318,19 @@ effets:
     bruit: 15         # grain temporel (0 = aucun, 50 = très visible)
     bitrate: "300k"   # plus bas = plus d'artefacts de compression
 
+  # ============ CONFIG LSD AUDIO-RÉACTIF ============
+  # Comme l'effet "lsd" mais les paramètres sont modulés par le RMS de
+  # la piste audio. Les valeurs effets.lsd.* servent de base ("calme").
+  # Quand le son monte, amplitude/vitesse/saturation/aberration sont
+  # multipliés par (1 + mod_* × rms_normalisé).
+  lsd_audio:
+    fichier: null              # défaut : 1er de audio.fichiers
+    buckets: null              # défaut : 1 par seconde
+    mod_amplitude: 1.0         # rms=1 → amp = amp_base × 2
+    mod_vitesse: 0.5
+    mod_saturation: 0.5
+    mod_aberration: 1.0
+
   # ============ CONFIG AUDIO-RÉACTIF ============
   # 4 modes : "rms" est le vrai audio-réactif (analyse le fichier audio).
   audioreactif:

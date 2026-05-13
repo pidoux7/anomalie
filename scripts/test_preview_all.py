@@ -84,6 +84,34 @@ scenario:
   sequences:
     - { taille: 16, effet: "audioreactif", duree: 6 }
 """,
+    "lsd_audio": """
+output_video: "videos/test_lsd_audio.mp4"
+input_anomalie: null
+max_cases: 256
+masques: { actif: false }
+audio:
+  actif: true
+  mode: "auto"
+  comportement: "continu"
+  fichiers: ["musiques/spiral.mp3"]
+effets:
+  lsd:
+    amplitude_onde: 80    # base : reste léger quand silence
+    vitesse_onde: 0.3
+    saturation: 1.5
+    aberration: 4
+    bruit: 20
+  lsd_audio:
+    fichier: "musiques/spiral.mp3"
+    mod_amplitude: 1.5
+    mod_saturation: 1.0
+    mod_aberration: 2.0
+    mod_vitesse: 0.5
+mode_plan: "scenario"
+scenario:
+  sequences:
+    - { taille: 16, effet: "lsd_audio", duree: 8 }
+""",
     "transition_smooth": """
 output_video: "videos/test_transition_smooth.mp4"
 input_anomalie: "videos/IMG_0175.MOV"

@@ -914,6 +914,94 @@ def creer_effet_rotation(video_source, taille, debut_source, duree,
 
 
 # ============================================================
+# LSD audio-réactif : params modulés par le RMS audio
+# ============================================================
+def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
+                           output_path, cell_w, cell_h, pad_x, pad_y):
+    """
+    Comme `lsd` mais les paramètres (amplitude, vitesse, saturation,
+    aberration) sont modulés par le RMS de la piste audio.
+    On découpe la durée en N tranches, on calcule le RMS de chacune,
+    on override config.EFFETS["lsd"] pour ce bucket et on appelle
+    creer_effet_lsd. Puis on concatène les buckets.
+
+    Paramètres dans effets.lsd_audio :
+        fichier            : audio à analyser (défaut : 1er de audio.fichiers)
+        buckets            : nombre de tranches (défaut = duree, soit 1/s)
+        mod_amplitude      : amp = amp_base * (1 + mod * rms)   (défaut 1.0)
+        mod_vitesse        : vit = vit_base * (1 + mod * rms)   (défaut 0.5)
+        mod_saturation     : sat = sat_base * (1 + mod * rms)   (défaut 0.5)
+        mod_aberration     : aber = aber_base * (1 + mod * rms) (défaut 1.0)
+    Les paramètres LSD de base (effets.lsd.*) restent la valeur "calme".
+    """
+    cfg_la = config.EFFETS.get("lsd_audio", {})
+    fichiers = config.AUDIO.get("fichiers", []) or []
+    fichier_audio = cfg_la.get("fichier")
+    if not fichier_audio:
+        for f0 in fichiers:
+            c = f0 if isinstance(f0, str) else f0.get("fichier")
+            if c and Path(c).exists():
+                fichier_audio = c
+                break
+    if not fichier_audio or not Path(fichier_audio).exists():
+        print(f"ERREUR lsd_audio : fichier audio introuvable : {fichier_audio}")
+        sys.exit(1)
+
+    n_buckets = int(cfg_la.get("buckets") or max(2, int(duree)))
+    mod_amp = float(cfg_la.get("mod_amplitude", 1.0))
+    mod_vit = float(cfg_la.get("mod_vitesse", 0.5))
+    mod_sat = float(cfg_la.get("mod_saturation", 0.5))
+    mod_aber = float(cfg_la.get("mod_aberration", 1.0))
+
+    cfg_lsd_base = dict(config.EFFETS.get("lsd", {}))
+    amp_base = float(cfg_lsd_base.get("amplitude_onde", 120))
+    vit_base = float(cfg_lsd_base.get("vitesse_onde", 0.4))
+    sat_base = float(cfg_lsd_base.get("saturation", 2.5))
+    aber_base = int(cfg_lsd_base.get("aberration", 8))
+
+    rms = _rms_buckets(fichier_audio, duree, n_buckets)
+    duree_bucket = duree / n_buckets
+
+    print(f"    [lsd_audio] {n_buckets} buckets × {duree_bucket:.2f}s, "
+          f"audio={fichier_audio}")
+
+    segments = []
+    try:
+        for i, rms_val in enumerate(rms):
+            config.EFFETS["lsd"] = {
+                **cfg_lsd_base,
+                "amplitude_onde": amp_base * (1 + mod_amp * rms_val),
+                "vitesse_onde":   vit_base * (1 + mod_vit * rms_val),
+                "saturation":     sat_base * (1 + mod_sat * rms_val),
+                "aberration":     max(1, int(aber_base * (1 + mod_aber * rms_val))),
+            }
+            seg = (config.WORK_DIR
+                   / f"lsd_audio_{taille}_{int(debut_source)}_{i:04d}.mp4")
+            debut_bucket = debut_source + i * duree_bucket
+            # Pas de padding par bucket (on padde le résultat final).
+            creer_effet_lsd(video_source, taille, debut_bucket, duree_bucket,
+                             seg, cell_w, cell_h, 0, 0)
+            segments.append(seg)
+    finally:
+        config.EFFETS["lsd"] = cfg_lsd_base
+
+    # Concat des buckets (même codec/dimensions → concat demuxer OK)
+    fusionne = config.WORK_DIR / f"lsd_audio_concat_{taille}_{int(debut_source)}.mp4"
+    concat_segments_simple(segments, fusionne)
+
+    if pad_x > 0 or pad_y > 0:
+        run([
+            "ffmpeg", "-y", "-i", str(fusionne),
+            "-vf", f"pad={config.FINAL_W}:{config.FINAL_H}:{pad_x}:{pad_y}:black,setsar=1",
+            *config.args_encodage(),
+            "-pix_fmt", "yuv420p",
+            str(output_path)
+        ])
+    else:
+        fusionne.rename(output_path)
+
+
+# ============================================================
 # Rampe avec crossfade entre étages
 # ============================================================
 def creer_effet_rampe_fade(video_source, taille, debut_source, duree,
@@ -1010,6 +1098,9 @@ def jouer_effet(nom_effet, video_source, video_anomalie_externe, taille,
     elif nom_effet == "rotation":
         creer_effet_rotation(video_source, taille, debut_source, duree,
                               output_path, cell_w, cell_h, pad_x, pad_y)
+    elif nom_effet == "lsd_audio":
+        creer_effet_lsd_audio(video_source, taille, debut_source, duree,
+                               output_path, cell_w, cell_h, pad_x, pad_y)
     elif nom_effet == "rampe_fade":
         if not directives:
             print("ERREUR : rampe_fade nécessite des directives (paramètres internes)")
