@@ -301,6 +301,7 @@ effets:
   kaleidoscope:
     # 2 : miroir vertical (moitié gauche réfléchie)
     # 4 : miroir vertical + horizontal (quart haut-gauche réfléchi 4 fois)
+    # 6 : "œil d'insecte" — tile 3x3 avec miroirs alternés par facette
     secteurs: 4
 
   # ============ CONFIG ROTATION ============
@@ -318,16 +319,19 @@ effets:
     bitrate: "300k"   # plus bas = plus d'artefacts de compression
 
   # ============ CONFIG AUDIO-RÉACTIF ============
-  # Superpose une visualisation audio sur la grille (blend en screen).
+  # 3 modes : l'image bouge (pulse) ou une viz est superposée (waves/spectrum).
   audioreactif:
-    # "waves"    : forme d'onde (animée par l'amplitude)
-    # "spectrum" : spectre CQT (animé par les fréquences)
-    mode: "waves"
-    # Fichier audio à visualiser (par défaut : 1er de audio.fichiers)
-    fichier: null
-    # Opacité de la superposition (0 = invisible, 1 = saturé)
+    # "pulse"    : zoom + rotation pulsés selon un BPM (image entière bouge)
+    # "waves"    : forme d'onde superposée
+    # "spectrum" : spectre CQT superposé
+    mode: "pulse"
+    # --- Mode pulse ---
+    bpm: 120              # pulsations par minute
+    intensite: 0.2        # amplitude du zoom (0 = aucun, 0.5 = ample)
+    rotation: 0.0         # rotation continue ajoutée (rad/s, 0 = aucune)
+    # --- Modes waves / spectrum ---
+    fichier: null         # audio à visualiser (défaut : 1er de audio.fichiers)
     opacite: 0.6
-    # Couleur du tracé (mode "waves" uniquement) : white, cyan, magenta, …
     couleur: "white"
 
 # ============================================================

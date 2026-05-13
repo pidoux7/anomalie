@@ -486,6 +486,7 @@ def construire_plan_scenario():
                 entry.get("duree_par_taille")
                 or _resolve_duree_seq(entry.get("duree"), duree_par_defaut)
             )
+            crossfade = float(entry.get("crossfade", 0))
             tailles = []
             if t_de <= t_a:
                 t = t_de
@@ -503,8 +504,22 @@ def construire_plan_scenario():
             champs_communs = {
                 k: v for k, v in entry.items()
                 if k not in ("type", "taille_de", "taille_a",
-                             "duree_par_taille", "duree")
+                             "duree_par_taille", "duree", "crossfade")
             }
+
+            # Si crossfade > 0 : un seul item avec effet rampe_fade qui
+            # gère le rendu de tous les étages + xfade en cascade.
+            if crossfade > 0 and len(tailles) >= 2:
+                duree_totale_r = (duree_par * len(tailles)
+                                    - crossfade * (len(tailles) - 1))
+                directives = _construire_directives(dict(champs_communs))
+                directives["effet"] = "rampe_fade"
+                directives["_rampe_etages"] = list(tailles)
+                directives["_rampe_duree_par"] = duree_par
+                directives["_rampe_crossfade"] = crossfade
+                plan.append((num_phase, tailles[-1], duree_totale_r, directives))
+                continue
+
             for t in tailles:
                 sub = dict(champs_communs)
                 sub["taille"] = t

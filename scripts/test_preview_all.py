@@ -33,6 +33,9 @@ input_anomalie: null
 max_cases: 256
 masques: { actif: false }
 audio: { actif: false }
+effets:
+  kaleidoscope:
+    secteurs: 6
 mode_plan: "scenario"
 scenario:
   sequences:
@@ -72,10 +75,10 @@ audio:
   fichiers: ["musiques/spiral.mp3"]
 effets:
   audioreactif:
-    fichier: "musiques/spiral.mp3"
-    mode: "waves"
-    opacite: 0.7
-    couleur: "cyan"
+    mode: "pulse"
+    bpm: 120
+    intensite: 0.25
+    rotation: 0.1
 mode_plan: "scenario"
 scenario:
   sequences:
@@ -108,9 +111,8 @@ scenario:
     - type: "rampe"
       taille_de: 1
       taille_a: 16
-      duree_par_taille: 1.5
-      aleatoire: true
-      anomalies: 3
+      duree_par_taille: 3
+      crossfade: 1.5
 """,
     "interpolation": """
 output_video: "videos/test_interpolation.mp4"

@@ -87,7 +87,8 @@ def _creer_phase_scenario(video_normale, video_anomalie_externe, taille,
         try:
             jouer_effet(nom_effet, video_eff, video_anomalie_externe,
                          taille, debut_eff, duree_phase, output_path,
-                         cell_w, cell_h, pad_x, pad_y)
+                         cell_w, cell_h, pad_x, pad_y,
+                         directives=directives)
         finally:
             if backup is not None:
                 config.EFFETS[nom_effet] = backup

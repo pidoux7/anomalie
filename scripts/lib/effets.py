@@ -248,18 +248,30 @@ def creer_effet_lsd(video_source, taille, debut_source, duree,
     else:
         last_label = "abr"
 
-    # Déformation 2D non-uniforme :
-    # - L'amplitude horizontale varie selon X (zones plus déformées que d'autres).
-    # - Une déformation verticale plus douce s'ajoute (cosinus en fonction de X+T).
-    # Résultat : ondulations moins synchronisées sur toute l'image.
-    expr_x = (
-        f"X+{amp}*sin(Y/{max(1,grid_h/freq):.3f}+T*{vit*6.28:.3f})"
-        f"*(0.5+0.5*sin(X/{max(1,grid_w/3):.0f}+T*{vit*2.5:.3f}))"
-    )
-    expr_y = (
-        f"Y+{amp/3}*cos(X/{max(1,grid_w/(freq*0.7)):.3f}"
-        f"+T*{vit*4.5:.3f})"
-    )
+    # Déformation 3D : 3 ondes simultanées à orientations différentes pour
+    # casser l'aspect unidirectionnel et donner une impression de profondeur.
+    #   - Onde 1 (horizontale) : varie selon Y, modulée par X (existante)
+    #   - Onde 2 (diagonale)   : variants selon (X+Y) et (X-Y)
+    #   - Onde 3 (radiale)     : pulsation depuis le centre de l'image
+    cx = grid_w / 2.0
+    cy = grid_h / 2.0
+    f_h = max(1, grid_h / freq)
+    f_w = max(1, grid_w / max(0.7, freq * 0.7))
+    f_diag = max(1, grid_h / max(0.7, freq * 1.3))
+    f_radial = max(1, min(grid_w, grid_h) / max(0.5, freq * 1.5))
+    dist = f"sqrt((X-{cx:.1f})*(X-{cx:.1f})+(Y-{cy:.1f})*(Y-{cy:.1f}))"
+
+    onde1_x = f"{amp}*sin(Y/{f_h:.3f}+T*{vit*6.28:.3f})"
+    onde1_mod = f"(0.5+0.5*sin(X/{max(1,grid_w/3):.0f}+T*{vit*2.5:.3f}))"
+    onde2_x = f"{amp/2}*sin((X+Y)/{f_diag:.3f}+T*{vit*3.5:.3f})"
+    onde2_y = f"{amp/2}*cos((X-Y)/{f_diag:.3f}+T*{vit*5.2:.3f})"
+    onde1_y = f"{amp/3}*cos(X/{f_w:.3f}+T*{vit*4.5:.3f})"
+    radial_amp = f"{amp/2.5}*sin({dist}/{f_radial:.3f}+T*{vit*3.0:.3f})"
+    radial_x = f"{radial_amp}*(X-{cx:.1f})/max({dist},1)"
+    radial_y = f"{radial_amp}*(Y-{cy:.1f})/max({dist},1)"
+
+    expr_x = f"X+{onde1_x}*{onde1_mod}+{onde2_x}+{radial_x}"
+    expr_y = f"Y+{onde1_y}+{onde2_y}+{radial_y}"
     parts.append(
         f"[{last_label}]geq="
         f"r='r({expr_x},{expr_y})':"
@@ -547,8 +559,24 @@ def creer_effet_kaleidoscope(video_source, taille, debut_source, duree,
             "[topb]vflip[bot];"
             "[topa][bot]vstack[v]"
         )
+    elif secteurs == 6:
+        # "Œil d'insecte" : tile 3x3 avec miroirs alternés sur chaque
+        # facette. La centrale est doublement flippée pour casser la
+        # symétrie évidente.
+        fc = (
+            "[0:v]scale=iw/3:ih/3,split=9[a][b][c][d][e][f][g][h][i];"
+            "[b]hflip[b2];"
+            "[d]vflip[d2];"
+            "[f]vflip[f2];"
+            "[h]hflip[h2];"
+            "[e]hflip,vflip[e2];"
+            "[a][b2][c]hstack=3[r1];"
+            "[d2][e2][f2]hstack=3[r2];"
+            "[g][h2][i]hstack=3[r3];"
+            "[r1][r2][r3]vstack=3[v]"
+        )
     else:
-        print(f"ERREUR : 'secteurs' kaléidoscope doit valoir 2 ou 4 (reçu {secteurs})")
+        print(f"ERREUR : 'secteurs' kaléidoscope doit valoir 2, 4 ou 6 (reçu {secteurs})")
         sys.exit(1)
 
     out_path = config.WORK_DIR / f"kal_out_{taille}_{int(debut_source)}.mp4"
@@ -579,33 +607,27 @@ def creer_effet_kaleidoscope(video_source, taille, debut_source, duree,
 def creer_effet_audioreactif(video_source, taille, debut_source, duree,
                               output_path, cell_w, cell_h, pad_x, pad_y):
     """
-    Superpose une visualisation audio (waveform ou spectre) sur la grille.
-    L'animation suit naturellement le signal audio donné en entrée.
+    Audio-réactif : 3 modes.
+      - "pulse"    : la grille pulse (zoom variable) selon un BPM donné.
+                     L'image bouge, c'est ce qu'on perçoit comme réactif.
+      - "waves"    : superpose une forme d'onde (visualisation overlay)
+      - "spectrum" : superpose un spectre CQT
     Paramètres dans effets.audioreactif :
-        mode      : "waves" (forme d'onde) ou "spectrum" (CQT)
-        fichier   : audio à visualiser (par défaut le 1er de audio.fichiers)
-        opacite   : 0-1, force de la superposition (mode screen)
-        couleur   : couleur du tracé (waves uniquement, ex "white", "cyan")
+        mode      : "pulse" | "waves" | "spectrum"
+        bpm       : pulsations par minute (mode pulse, default 120)
+        intensite : amplitude du zoom (mode pulse, default 0.2)
+        rotation  : rad/s additionnels (mode pulse, default 0)
+        fichier   : audio à visualiser (waves/spectrum)
+        opacite   : 0-1, force de la superposition (waves/spectrum)
+        couleur   : couleur du tracé (waves uniquement)
     """
     cfg_ar = config.EFFETS.get("audioreactif", {})
-    mode = cfg_ar.get("mode", "waves")
-    fichier_audio = cfg_ar.get("fichier")
-    if not fichier_audio:
-        # Fallback : premier fichier de audio.fichiers
-        fichiers = config.AUDIO.get("fichiers", []) or []
-        if fichiers:
-            f0 = fichiers[0]
-            fichier_audio = f0 if isinstance(f0, str) else f0.get("fichier")
-    if not fichier_audio or not Path(fichier_audio).exists():
-        print(f"ERREUR audioreactif : fichier audio introuvable : {fichier_audio}")
-        sys.exit(1)
-    opacite = float(cfg_ar.get("opacite", 0.6))
-    couleur = cfg_ar.get("couleur", "white")
+    mode = cfg_ar.get("mode", "pulse")
 
     grid_w = cell_w * taille
     grid_h = cell_h * taille
 
-    print(f"    [audioreactif] mode={mode}, fichier={fichier_audio}, opacite={opacite}")
+    print(f"    [audioreactif] mode={mode}, préparation grille…")
     mini = config.WORK_DIR / f"ar_mini_{taille}_{int(debut_source)}.mp4"
     fabriquer_segment(video_source, mini, debut_source, duree, cell_w, cell_h)
     grille = config.WORK_DIR / f"ar_grille_{taille}_{int(debut_source)}.mp4"
@@ -615,24 +637,63 @@ def creer_effet_audioreactif(video_source, taille, debut_source, duree,
     else:
         assembler_grille(taille, paths, duree, grille, 0, 0)
 
-    if mode == "spectrum":
-        viz = f"showcqt=s={grid_w}x{grid_h}"
-    else:
-        viz = f"showwaves=s={grid_w}x{grid_h}:mode=cline:colors={couleur}"
-
     out_path = config.WORK_DIR / f"ar_out_{taille}_{int(debut_source)}.mp4"
-    run([
-        "ffmpeg", "-y",
-        "-i", str(grille),
-        "-i", str(fichier_audio),
-        "-filter_complex",
-            f"[1:a]{viz}[viz];"
-            f"[0:v][viz]blend=all_mode=screen:all_opacity={opacite}[v]",
-        "-map", "[v]", "-t", str(duree),
-        *config.args_encodage(),
-        "-pix_fmt", "yuv420p",
-        str(out_path)
-    ])
+
+    if mode == "pulse":
+        bpm = float(cfg_ar.get("bpm", 120))
+        intensite = float(cfg_ar.get("intensite", 0.2))
+        rotation = float(cfg_ar.get("rotation", 0.0))
+        # Période en frames (30 fps). Zoom = 1 + i*(sin(2π * on / period)+1)/2
+        # `on` est le numéro de frame, plus stable que `t` dans zoompan.
+        period_frames = 30.0 / (bpm / 60.0)
+        z_expr = f"1+{intensite}*(sin(2*PI*on/{period_frames:.3f})+1)/2"
+        print(f"    [audioreactif/pulse] bpm={bpm}, intensite={intensite}, "
+              f"rotation={rotation}")
+        vf_parts = [f"zoompan=z='{z_expr}':d=1:s={grid_w}x{grid_h}:fps=30"]
+        if rotation != 0:
+            # Rotation continue par-dessus le zoom pulsé
+            vf_parts.append(
+                f"rotate={rotation}*t:c=black:ow={grid_w}:oh={grid_h}"
+            )
+        run([
+            "ffmpeg", "-y", "-i", str(grille),
+            "-vf", ",".join(vf_parts),
+            "-t", str(duree),
+            *config.args_encodage(),
+            "-pix_fmt", "yuv420p",
+            str(out_path)
+        ])
+    else:
+        # Modes overlay (waves/spectrum) : ancienne implémentation
+        fichier_audio = cfg_ar.get("fichier")
+        if not fichier_audio:
+            fichiers = config.AUDIO.get("fichiers", []) or []
+            if fichiers:
+                f0 = fichiers[0]
+                fichier_audio = f0 if isinstance(f0, str) else f0.get("fichier")
+        if not fichier_audio or not Path(fichier_audio).exists():
+            print(f"ERREUR audioreactif : fichier audio introuvable : {fichier_audio}")
+            sys.exit(1)
+        opacite = float(cfg_ar.get("opacite", 0.6))
+        couleur = cfg_ar.get("couleur", "white")
+
+        if mode == "spectrum":
+            viz = f"showcqt=s={grid_w}x{grid_h}"
+        else:
+            viz = f"showwaves=s={grid_w}x{grid_h}:mode=cline:colors={couleur}"
+
+        run([
+            "ffmpeg", "-y",
+            "-i", str(grille),
+            "-i", str(fichier_audio),
+            "-filter_complex",
+                f"[1:a]{viz}[viz];"
+                f"[0:v][viz]blend=all_mode=screen:all_opacity={opacite}[v]",
+            "-map", "[v]", "-t", str(duree),
+            *config.args_encodage(),
+            "-pix_fmt", "yuv420p",
+            str(out_path)
+        ])
 
     if pad_x > 0 or pad_y > 0:
         run([
@@ -767,10 +828,67 @@ def creer_effet_rotation(video_source, taille, debut_source, duree,
 
 
 # ============================================================
+# Rampe avec crossfade entre étages
+# ============================================================
+def creer_effet_rampe_fade(video_source, taille, debut_source, duree,
+                            output_path, cell_w, cell_h, pad_x, pad_y,
+                            etages, duree_par, crossfade):
+    """
+    Rend chaque étage de la rampe à sa propre taille de grille, puis
+    enchaîne avec un fondu xfade en cascade entre étages successifs.
+    """
+    from .grille import calculer_taille_cellule, construire_sous_segment
+
+    print(f"    [rampe_fade] {len(etages)} étages, {duree_par}s chacun, "
+          f"crossfade={crossfade}s")
+    segments = []
+    for idx, t_etage in enumerate(etages):
+        cw, ch, _, _, px, py = calculer_taille_cellule(t_etage)
+        seg = config.WORK_DIR / f"rfade_{idx:02d}_t{t_etage}_{int(debut_source)}.mp4"
+        # On rend chaque étage comme une grille "neutre" (toutes cellules =
+        # source, pas d'anomalie). Le pad est inclus pour que tous les
+        # segments aient les dimensions FINAL_W × FINAL_H, condition
+        # nécessaire pour xfade.
+        construire_sous_segment(
+            video_source, None, t_etage, debut_source, duree_par, seg,
+            cw, ch, px, py, set(), {}
+        )
+        segments.append(seg)
+
+    # Cascade xfade : à chaque étage suivant, on overlap `crossfade` secondes.
+    # offset_n = n * (duree_par - crossfade)
+    inputs = []
+    for s in segments:
+        inputs += ["-i", str(s)]
+    fc_parts = []
+    last = "0:v"
+    for i in range(1, len(segments)):
+        offset = i * (duree_par - crossfade)
+        label = f"x{i}"
+        fc_parts.append(
+            f"[{last}][{i}:v]xfade=transition=fade:"
+            f"duration={crossfade}:offset={offset:.3f}[{label}]"
+        )
+        last = label
+
+    run([
+        "ffmpeg", "-y",
+        *inputs,
+        "-filter_complex", ";".join(fc_parts),
+        "-map", f"[{last}]",
+        "-t", str(duree),
+        *config.args_encodage(),
+        "-pix_fmt", "yuv420p",
+        str(output_path)
+    ])
+
+
+# ============================================================
 # Dispatcher
 # ============================================================
 def jouer_effet(nom_effet, video_source, video_anomalie_externe, taille,
-                 debut_source, duree, output_path, cell_w, cell_h, pad_x, pad_y):
+                 debut_source, duree, output_path, cell_w, cell_h, pad_x, pad_y,
+                 directives=None):
     if nom_effet == "mosaique":
         creer_effet_mosaique(video_source, taille, debut_source, duree,
                               output_path, cell_w, cell_h, pad_x, pad_y)
@@ -806,6 +924,17 @@ def jouer_effet(nom_effet, video_source, video_anomalie_externe, taille,
     elif nom_effet == "rotation":
         creer_effet_rotation(video_source, taille, debut_source, duree,
                               output_path, cell_w, cell_h, pad_x, pad_y)
+    elif nom_effet == "rampe_fade":
+        if not directives:
+            print("ERREUR : rampe_fade nécessite des directives (paramètres internes)")
+            sys.exit(1)
+        creer_effet_rampe_fade(
+            video_source, taille, debut_source, duree, output_path,
+            cell_w, cell_h, pad_x, pad_y,
+            directives["_rampe_etages"],
+            directives["_rampe_duree_par"],
+            directives["_rampe_crossfade"],
+        )
     else:
         print(f"ERREUR : effet inconnu '{nom_effet}'")
         sys.exit(1)
