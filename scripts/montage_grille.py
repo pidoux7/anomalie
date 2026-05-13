@@ -17,8 +17,11 @@ Architecture :
     `lib/` (config, commun, masques, grille, effets, phases, audio).
 """
 
+import hashlib
+import json
 import os
 import random
+import shutil
 import sys
 from pathlib import Path
 
@@ -78,11 +81,35 @@ def _generer_video(video_temp):
     debut = 0.0
     phase_courante = 0
     for i, (num_phase, taille, duree_seq, directives) in enumerate(config.PLAN):
+        seg = config.WORK_DIR / f"phase{num_phase:02d}_seq{i:03d}_t{taille}.mp4"
+
+        # Cache du segment complet (en plus du cache des cellules) : si les
+        # mêmes paramètres ont déjà été rendus, on copie depuis le cache.
+        seg_cache = None
+        if config.CACHE_ACTIF:
+            key = _seg_cache_key(num_phase, taille, duree_seq, directives, debut)
+            seg_cache = config.CACHE_DIR / f"seg_{key}.mp4"
+            if seg_cache.exists() and seg_cache.stat().st_size > 2048:
+                print(f"\n  [seg cache] Phase {taille}x{taille} séq {i+1}/{len(config.PLAN)}"
+                      f" → réutilisé")
+                shutil.copy(str(seg_cache), str(seg))
+                segments.append(seg)
+                debut += duree_seq
+                continue
+            _seed_pour_segment(key)
+
         if num_phase != phase_courante:
             print(f"\n--- PHASE {num_phase}/{config.NB_PHASES_PLAN} (nouvelles anomalies) ---")
             phase_courante = num_phase
-        seg = config.WORK_DIR / f"phase{num_phase:02d}_seq{i:03d}_t{taille}.mp4"
+
         creer_phase(base_full, anomalie_full, taille, seg, duree_seq, debut, directives)
+
+        if seg_cache is not None and seg.exists():
+            try:
+                shutil.copy(str(seg), str(seg_cache))
+            except OSError:
+                pass
+
         segments.append(seg)
         debut += duree_seq
 
@@ -102,6 +129,30 @@ def _ajouter_audio(video_temp):
         durees_segments = [p[2] for p in config.PLAN]
         construire_piste_audio(piste_audio, durees_segments)
     muxer_audio_video(video_temp, piste_audio, config.OUTPUT_VIDEO)
+
+
+def _seg_cache_key(num_phase, taille, duree, directives, debut):
+    """Hash stable des paramètres → clé de cache pour un segment de phase."""
+    sig = {
+        "np": num_phase, "t": taille,
+        "d": round(duree, 3), "deb": round(debut, 3),
+        "dirs": directives,
+        "fw": config.FINAL_W, "fh": config.FINAL_H,
+        "enc": config.ENCODEUR, "crf": config.CRF,
+    }
+    blob = json.dumps(sig, sort_keys=True, default=str)
+    return hashlib.sha1(blob.encode()).hexdigest()[:16]
+
+
+def _seed_pour_segment(key):
+    """
+    Reseed le RNG global au début de chaque séquence pour que les tirages
+    aléatoires (random.sample des positions, choix de filtres…) soient
+    reproductibles entre runs. C'est indispensable pour que le cache des
+    segments soit cohérent (mêmes params → même rendu → cache hit).
+    """
+    seed = int(key[:12], 16)
+    random.seed(seed)
 
 
 def _afficher_dry_run():
