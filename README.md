@@ -139,6 +139,29 @@ la vidéo externe à son propre offset → look mosaïque. Avec `false`,
 toutes les cellules lisent le **même instant** de la vidéo en même temps
 → on voit la vidéo entière à travers le quadrillage, sans saccade.
 
+### Réutilisation : YAML anchors
+
+YAML supporte nativement les ancres `&` et alias `*` (et le merge `<<:`)
+pour factoriser des blocs réutilisés à plusieurs endroits du scenario :
+
+```yaml
+scenario:
+  sequences:
+    # Définit une ancre la première fois qu'on utilise le bloc
+    - &intro_64 { taille: 64, video: "videos/video_b.mp4", aleatoire: true, anomalies: 100 }
+
+    - { taille: 1 }
+    - *intro_64                        # exactement le même bloc
+
+    # Merge : on hérite des champs et on override
+    - <<: *intro_64
+      anomalies: 500                   # tout pareil sauf anomalies
+      duree: 5
+```
+
+Très utile pour les scenarios longs (sequence.yaml) où la même séquence
+revient plusieurs fois (montée/descente, transitions identiques).
+
 **Note `video`** : disponible uniquement en mode scenario. Si absent, la
 séquence utilise `input_video` (config globale). Si présent, la vidéo
 dédiée joue **depuis le début** (le seek cumulé du plan ne s'applique
