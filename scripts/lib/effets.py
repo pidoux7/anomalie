@@ -574,6 +574,79 @@ def creer_effet_kaleidoscope(video_source, taille, debut_source, duree,
 
 
 # ============================================================
+# Audio-réactif (visualisation audio superposée)
+# ============================================================
+def creer_effet_audioreactif(video_source, taille, debut_source, duree,
+                              output_path, cell_w, cell_h, pad_x, pad_y):
+    """
+    Superpose une visualisation audio (waveform ou spectre) sur la grille.
+    L'animation suit naturellement le signal audio donné en entrée.
+    Paramètres dans effets.audioreactif :
+        mode      : "waves" (forme d'onde) ou "spectrum" (CQT)
+        fichier   : audio à visualiser (par défaut le 1er de audio.fichiers)
+        opacite   : 0-1, force de la superposition (mode screen)
+        couleur   : couleur du tracé (waves uniquement, ex "white", "cyan")
+    """
+    cfg_ar = config.EFFETS.get("audioreactif", {})
+    mode = cfg_ar.get("mode", "waves")
+    fichier_audio = cfg_ar.get("fichier")
+    if not fichier_audio:
+        # Fallback : premier fichier de audio.fichiers
+        fichiers = config.AUDIO.get("fichiers", []) or []
+        if fichiers:
+            f0 = fichiers[0]
+            fichier_audio = f0 if isinstance(f0, str) else f0.get("fichier")
+    if not fichier_audio or not Path(fichier_audio).exists():
+        print(f"ERREUR audioreactif : fichier audio introuvable : {fichier_audio}")
+        sys.exit(1)
+    opacite = float(cfg_ar.get("opacite", 0.6))
+    couleur = cfg_ar.get("couleur", "white")
+
+    grid_w = cell_w * taille
+    grid_h = cell_h * taille
+
+    print(f"    [audioreactif] mode={mode}, fichier={fichier_audio}, opacite={opacite}")
+    mini = config.WORK_DIR / f"ar_mini_{taille}_{int(debut_source)}.mp4"
+    fabriquer_segment(video_source, mini, debut_source, duree, cell_w, cell_h)
+    grille = config.WORK_DIR / f"ar_grille_{taille}_{int(debut_source)}.mp4"
+    paths = [mini] * (taille * taille)
+    if (taille * taille) > 256:
+        assembler_grille_par_lignes(taille, paths, duree, grille, 0, 0)
+    else:
+        assembler_grille(taille, paths, duree, grille, 0, 0)
+
+    if mode == "spectrum":
+        viz = f"showcqt=s={grid_w}x{grid_h}"
+    else:
+        viz = f"showwaves=s={grid_w}x{grid_h}:mode=cline:colors={couleur}"
+
+    out_path = config.WORK_DIR / f"ar_out_{taille}_{int(debut_source)}.mp4"
+    run([
+        "ffmpeg", "-y",
+        "-i", str(grille),
+        "-i", str(fichier_audio),
+        "-filter_complex",
+            f"[1:a]{viz}[viz];"
+            f"[0:v][viz]blend=all_mode=screen:all_opacity={opacite}[v]",
+        "-map", "[v]", "-t", str(duree),
+        *config.args_encodage(),
+        "-pix_fmt", "yuv420p",
+        str(out_path)
+    ])
+
+    if pad_x > 0 or pad_y > 0:
+        run([
+            "ffmpeg", "-y", "-i", str(out_path),
+            "-vf", f"pad={config.FINAL_W}:{config.FINAL_H}:{pad_x}:{pad_y}:black,setsar=1",
+            *config.args_encodage(),
+            "-pix_fmt", "yuv420p",
+            str(output_path)
+        ])
+    else:
+        out_path.rename(output_path)
+
+
+# ============================================================
 # Dispatcher
 # ============================================================
 def jouer_effet(nom_effet, video_source, video_anomalie_externe, taille,
@@ -603,6 +676,9 @@ def jouer_effet(nom_effet, video_source, video_anomalie_externe, taille,
                                         pad_x, pad_y)
     elif nom_effet == "kaleidoscope":
         creer_effet_kaleidoscope(video_source, taille, debut_source, duree,
+                                  output_path, cell_w, cell_h, pad_x, pad_y)
+    elif nom_effet == "audioreactif":
+        creer_effet_audioreactif(video_source, taille, debut_source, duree,
                                   output_path, cell_w, cell_h, pad_x, pad_y)
     else:
         print(f"ERREUR : effet inconnu '{nom_effet}'")
