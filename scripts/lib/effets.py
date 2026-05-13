@@ -504,6 +504,76 @@ def creer_effet_transition_smooth(video_b, video_a, taille, debut, duree,
 
 
 # ============================================================
+# Kaléidoscope
+# ============================================================
+def creer_effet_kaleidoscope(video_source, taille, debut_source, duree,
+                              output_path, cell_w, cell_h, pad_x, pad_y):
+    """
+    Effet kaléidoscope : on prépare la grille pleine (toutes cellules =
+    source), puis on en garde un quart (haut-gauche) que l'on réfléchit
+    horizontalement et verticalement pour reconstituer une image
+    symétrique miroir. Paramètre `secteurs` : 2 (miroir vertical) ou
+    4 (miroir vertical+horizontal).
+    """
+    cfg_k = config.EFFETS.get("kaleidoscope", {})
+    secteurs = int(cfg_k.get("secteurs", 4))
+
+    print(f"    [kaleidoscope] secteurs={secteurs}, préparation grille…")
+    mini = config.WORK_DIR / f"kal_mini_{taille}_{int(debut_source)}.mp4"
+    fabriquer_segment(video_source, mini, debut_source, duree, cell_w, cell_h)
+    grille = config.WORK_DIR / f"kal_grille_{taille}_{int(debut_source)}.mp4"
+    paths = [mini] * (taille * taille)
+    if (taille * taille) > 256:
+        assembler_grille_par_lignes(taille, paths, duree, grille, 0, 0)
+    else:
+        assembler_grille(taille, paths, duree, grille, 0, 0)
+
+    if secteurs == 2:
+        # Miroir vertical : moitié gauche + son reflet
+        fc = (
+            "[0:v]crop=iw/2:ih:0:0[l_src];"
+            "[l_src]split[la][lb];"
+            "[lb]hflip[r];"
+            "[la][r]hstack[v]"
+        )
+    elif secteurs == 4:
+        # Miroir vertical + horizontal : quart haut-gauche réfléchi
+        fc = (
+            "[0:v]crop=iw/2:ih/2:0:0[tl_src];"
+            "[tl_src]split[tla][tlb];"
+            "[tlb]hflip[tr];"
+            "[tla][tr]hstack[top_src];"
+            "[top_src]split[topa][topb];"
+            "[topb]vflip[bot];"
+            "[topa][bot]vstack[v]"
+        )
+    else:
+        print(f"ERREUR : 'secteurs' kaléidoscope doit valoir 2 ou 4 (reçu {secteurs})")
+        sys.exit(1)
+
+    out_path = config.WORK_DIR / f"kal_out_{taille}_{int(debut_source)}.mp4"
+    run([
+        "ffmpeg", "-y", "-i", str(grille),
+        "-filter_complex", fc,
+        "-map", "[v]", "-t", str(duree),
+        *config.args_encodage(),
+        "-pix_fmt", "yuv420p",
+        str(out_path)
+    ])
+
+    if pad_x > 0 or pad_y > 0:
+        run([
+            "ffmpeg", "-y", "-i", str(out_path),
+            "-vf", f"pad={config.FINAL_W}:{config.FINAL_H}:{pad_x}:{pad_y}:black,setsar=1",
+            *config.args_encodage(),
+            "-pix_fmt", "yuv420p",
+            str(output_path)
+        ])
+    else:
+        out_path.rename(output_path)
+
+
+# ============================================================
 # Dispatcher
 # ============================================================
 def jouer_effet(nom_effet, video_source, video_anomalie_externe, taille,
@@ -531,6 +601,9 @@ def jouer_effet(nom_effet, video_source, video_anomalie_externe, taille,
                                         taille, debut_source, duree,
                                         output_path, cell_w, cell_h,
                                         pad_x, pad_y)
+    elif nom_effet == "kaleidoscope":
+        creer_effet_kaleidoscope(video_source, taille, debut_source, duree,
+                                  output_path, cell_w, cell_h, pad_x, pad_y)
     else:
         print(f"ERREUR : effet inconnu '{nom_effet}'")
         sys.exit(1)

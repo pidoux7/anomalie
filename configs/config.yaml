@@ -296,6 +296,13 @@ effets:
     # Mode du contour : "edges" (lignes nettes) ou "wires" (lignes fines)
     lignes_mode: "edges"
 
+  # ============ CONFIG KALEIDOSCOPE ============
+  # Reflète la grille en symétrie miroir.
+  kaleidoscope:
+    # 2 : miroir vertical (moitié gauche réfléchie)
+    # 4 : miroir vertical + horizontal (quart haut-gauche réfléchi 4 fois)
+    secteurs: 4
+
 # ============================================================
 # MASQUES — pré-réglé selon tes choix
 # ============================================================
