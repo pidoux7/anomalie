@@ -1025,20 +1025,31 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
     else:
         assembler_grille(taille, paths, duree, grille, 0, 0)
 
-    # 2) Expression du facteur d'amplitude en fonction de T :
+    # 2) Expression du facteur d'amplitude en fonction de T.
     #    Sous le seuil, on reste à repos_amp (effet invisible).
     #    Au-dessus, on rampe linéairement entre seuil et 1.0 vers la
     #    valeur max (repos + mod_amp).
-    def _fact(r):
+    def _ramp(r, base, total):
         if r < seuil:
-            return repos_amp
+            return base
         r_norm = (r - seuil) / max(1e-3, 1.0 - seuil)
-        return repos_amp + mod_amp * r_norm
+        return base + total * r_norm
+
+    def _fact(r):    # facteur amplitude (sera mis dans st(0,...))
+        return _ramp(r, repos_amp, mod_amp)
+
+    def _sat_fact(r):  # facteur saturation : 1.0 sous seuil, sat × (1+mod) max
+        return _ramp(r, 1.0, mod_sat)
+
     fact_expr = f"{_fact(rms[-1]):.4f}"
+    sat_expr = f"{_sat_fact(rms[-1]):.4f}"
     for i in range(n_buckets - 2, -1, -1):
         t_seuil = (i + 1) * duree_bucket
         fact_expr = (f"if(lt(T\\,{t_seuil:.3f})\\,"
                      f"{_fact(rms[i]):.4f}\\,{fact_expr})")
+        # hue utilise la variable `t` minuscule (pas T)
+        sat_expr = (f"if(lt(t\\,{t_seuil:.3f})\\,"
+                    f"{_sat_fact(rms[i]):.4f}\\,{sat_expr})")
 
     # 3) Construire l'expression geq avec amplitude = amp_base × ld(0)
     grid_w = cell_w * taille
@@ -1066,32 +1077,27 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
     expr_x = f"{init}\\;X+{onde1_x}*{onde1_mod}+{onde2_x}+{radial_x}"
     expr_y = f"{init}\\;Y+{onde1_y}+{onde2_y}+{radial_y}"
 
-    # 4) Pipeline complet : hue (couleur), rgbashift (aberration), geq
-    sat_eff = sat_base * (1 + mod_sat * 0.6)
-    aber_eff = max(1, int(aber_base * (1 + mod_aber * 0.6)))
+    # 4) Pipeline réorganisé pour que la couleur suive aussi le seuil :
+    #    - geq d'abord (déformation modulée par audio)
+    #    - hue ensuite avec saturation = expression de t (1.0 sous seuil)
+    #    - rgbashift et noise retirés : ce sont des filtres CONSTANTS qui
+    #      seraient toujours visibles, même au repos. La modulation de
+    #      l'amplitude geq + saturation hue suffit à donner l'effet.
     parts = [
-        f"[0:v]hue=h={teinte_base}:s={sat_eff}[col]",
-        (f"[col]rgbashift=rh={aber_eff}:bh=-{aber_eff}"
-         f":rv=-{aber_eff//2}:bv={aber_eff//2}[abr]"),
-    ]
-    if bruit_base > 0:
-        parts.append(f"[abr]noise=alls={bruit_base}:allf=t+u[abr2]")
-        last_label = "abr2"
-    else:
-        last_label = "abr"
-    parts.append(
-        f"[{last_label}]geq="
+        f"[0:v]geq="
         f"r='r({expr_x}\\,{expr_y})':"
         f"g='g({expr_x}\\,{expr_y})':"
-        f"b='b({expr_x}\\,{expr_y})'[wave]"
-    )
+        f"b='b({expr_x}\\,{expr_y})'[deformed]",
+        f"[deformed]hue=h={teinte_base}:s='{sat_expr}'[wave]",
+    ]
     if lignes_force > 0:
         edge_mode = "wires" if lignes_mode == "wires" else "canny"
+        # Les contours sont eux aussi constants ; on les laisse faibles.
         parts.append(
             f"[wave]split[w1][w2];"
             f"[w2]edgedetect=mode={edge_mode}:low=0.1:high=0.4,"
-            f"hue=h={teinte_base}:s=3,eq=brightness={lignes_force*0.3}[edges];"
-            f"[w1][edges]blend=all_mode=screen:all_opacity={lignes_force}[v]"
+            f"hue=h={teinte_base}:s=2,eq=brightness={lignes_force*0.2}[edges];"
+            f"[w1][edges]blend=all_mode=screen:all_opacity={lignes_force*0.5}[v]"
         )
     else:
         parts.append("[wave]copy[v]")
