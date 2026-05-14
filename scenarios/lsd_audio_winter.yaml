@@ -16,7 +16,7 @@ masques: { actif: false }
 
 effets:
   lsd:
-    amplitude_onde: 100      # base relevée (60 → 100) → ondes plus amples au pic
+    amplitude_onde: 70      # base relevée (60 → 100) → ondes plus amples au pic
     vitesse_onde: 0.35       # un peu plus rapide pour suivre les beats
     frequence_onde: 8
     aberration: 3
@@ -30,17 +30,20 @@ effets:
     fichier: "musiques/winter.mp3"
     debut: "1:00"            # ⇆ doit matcher audio.fichiers[0].debut !
     buckets: null            # défaut 4/s — capture bien les beats
-    lissage: 2               # moins lissé → plus réactif aux attaques
-    puissance: 2.0           # contraste fort silence/pic sans étouffer le moyen
-    percentile: 0.80         # 80e perc → plus de buckets atteignent ~1.0
+    lissage: 1               # peu de lissage → suit bien les attaques
+    puissance: 3.0           # contraste fort : valeurs moyennes écrasées
+    percentile: 0.95         # 95e perc → seul le top 5% atteint 1.0
+    # SEUIL : RMS sous ce seuil → effet invisible (repos_amplitude).
+    # Au-dessus → rampe linéaire vers le max. Donne un vrai contraste
+    # silence/explosion plutôt que mouvement permanent.
+    seuil: 0.55              # ~50% des buckets devraient passer au-dessus
     # Le facteur multiplie l'amplitude des ondes dans geq :
-    #   amplitude_effective = amp_base × (repos + mod_amplitude × rms)
-    # repos bas → vidéo quasi intacte au silence
-    # repos + mod_amp(=pic) → déformation très ample
-    repos_amplitude: 0.03    # 3% au repos = vidéo presque nette
-    mod_amplitude: 3.0       # pic → facteur ≈ 3.03 → amp × 3 = 300 (très ample)
-    mod_saturation: 2.0      # pic → sat × 3.4 = très saturé
-    mod_aberration: 4.0      # pic → aber × 5 = aberration chromatique forte
+    #   sous seuil : amp_eff = amp_base × repos_amplitude (vidéo nette)
+    #   au-dessus  : amp_eff = amp_base × (repos + mod_amp × normalisé)
+    repos_amplitude: 0.02    # 2% au repos = vidéo presque intacte
+    mod_amplitude: 3.0       # pic → facteur ≈ 3.02 → effet ample
+    mod_saturation: 2.0      # pic → sat × 3 = très saturé
+    mod_aberration: 4.0      # pic → aber × 5 = aberration forte
 
 # Audio : winter.mp3 lu à partir de 1:00
 audio:

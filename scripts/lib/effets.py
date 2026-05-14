@@ -985,6 +985,11 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
     mod_vit = float(cfg_la.get("mod_vitesse", 0.5))
     mod_sat = float(cfg_la.get("mod_saturation", 0.5))
     mod_aber = float(cfg_la.get("mod_aberration", 1.0))
+    # Seuil RMS pour activer l'effet (0 = pas de seuil, rampe linéaire ;
+    # 0.5 = en dessous on reste au repos, au-dessus on rampe brusquement).
+    # Permet d'avoir un vrai contraste calme/explosion au lieu d'un
+    # effet présent en permanence.
+    seuil = float(cfg_la.get("seuil", 0.0))
 
     cfg_lsd_base = dict(config.EFFETS.get("lsd", {}))
     amp_base = float(cfg_lsd_base.get("amplitude_onde", 120))
@@ -1003,9 +1008,12 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
                        lissage=lissage)
     duree_bucket = duree / n_buckets
 
+    n_actifs = sum(1 for r in rms if r >= seuil)
     print(f"    [lsd_audio] {n_buckets} buckets × {duree_bucket:.2f}s, "
           f"audio={fichier_audio} @ {debut_audio}s, "
-          f"repos={repos_amp}, mod_amp={mod_amp}")
+          f"repos={repos_amp}, mod_amp={mod_amp}, seuil={seuil} "
+          f"→ {n_actifs}/{n_buckets} buckets actifs "
+          f"({100*n_actifs/n_buckets:.0f}%)")
 
     # 1) Grille normale (vidéo source en N×N cellules)
     mini = config.WORK_DIR / f"lsda_mini_{taille}_{int(debut_source)}.mp4"
@@ -1018,9 +1026,14 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
         assembler_grille(taille, paths, duree, grille, 0, 0)
 
     # 2) Expression du facteur d'amplitude en fonction de T :
-    #    facteur(silence=0) = repos_amp ; facteur(pic=1) = repos_amp + mod_amp
+    #    Sous le seuil, on reste à repos_amp (effet invisible).
+    #    Au-dessus, on rampe linéairement entre seuil et 1.0 vers la
+    #    valeur max (repos + mod_amp).
     def _fact(r):
-        return repos_amp + mod_amp * r
+        if r < seuil:
+            return repos_amp
+        r_norm = (r - seuil) / max(1e-3, 1.0 - seuil)
+        return repos_amp + mod_amp * r_norm
     fact_expr = f"{_fact(rms[-1]):.4f}"
     for i in range(n_buckets - 2, -1, -1):
         t_seuil = (i + 1) * duree_bucket
