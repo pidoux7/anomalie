@@ -30,19 +30,17 @@ effets:
     fichier: "musiques/winter.mp3"
     debut: "1:00"            # ⇆ doit matcher audio.fichiers[0].debut !
     buckets: null            # défaut 4/s
-    lissage: 4               # adoucit les variations d'opacité
+    lissage: 4               # adoucit la modulation
     puissance: 2.5
     percentile: 0.85
-    # Opacité de l'effet LSD sur la vidéo originale :
-    # silence → opacite_min (on voit la vidéo source)
-    # pic     → opacite_max (on voit majoritairement le LSD)
-    opacite_min: 0.05
-    opacite_max: 0.80        # baisse pour voir davantage la vidéo
-    # Paramètres LSD "max" (utilisés pour rendre 1 grille LSD plein régime)
-    mod_amplitude: 2.5
-    mod_vitesse: 0.6
-    mod_saturation: 1.2
-    mod_aberration: 3.0
+    # Le facteur multiplie l'amplitude des ondes dans geq :
+    #   amplitude_effective = amp_base × (repos + mod_amplitude × rms)
+    # repos très bas → vidéo presque intacte sur les silences
+    # repos + mod_amp(=pic) → déformation maxi
+    repos_amplitude: 0.05    # 5% d'amplitude au repos = vidéo quasi nette
+    mod_amplitude: 1.5       # pic → facteur ≈ 1.55 (amp×1.55 = ample)
+    mod_saturation: 1.0
+    mod_aberration: 2.0
 
 # Audio : winter.mp3 lu à partir de 1:00
 audio:

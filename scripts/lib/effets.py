@@ -951,20 +951,15 @@ def creer_effet_rotation(video_source, taille, debut_source, duree,
 def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
                            output_path, cell_w, cell_h, pad_x, pad_y):
     """
-    LSD audio-réactif via blend continu :
-      1. Rend UNE grille normale (la vidéo source vue en N×N)
-      2. Rend UNE grille avec LSD à "puissance max" (les ondes tournent
-         continument sur toute la durée — pas de coupures)
-      3. Calcule le RMS de la piste audio par tranches
-      4. Blend frame par frame les 2 vidéos selon une opacité = RMS audio :
-            silence → on voit la vidéo originale (opacite_min)
-            pic     → on voit le LSD (opacite_max)
+    LSD vraiment audio-réactif : la VIDÉO elle-même est déformée plus ou
+    moins fort selon le RMS de la piste audio. Un seul appel geq sur
+    toute la durée, avec une expression `st(0, facteur_T); X+amp*ld(0)*...`
+    qui multiplie l'amplitude des ondes par un facteur dépendant de T.
 
-    Avantages vs ancienne approche par N rendus geq distincts :
-      - le LSD est rendu UNE fois → beaucoup plus rapide
-      - les ondes restent continues dans le temps → plus de saccades
-      - la vidéo source reste visible derrière l'effet (problème "on ne
-        voit pas la vidéo" résolu)
+    Quand l'audio est silencieux, le facteur ≈ 0 → ondes plates → vidéo
+    quasi-intacte. Quand ça monte, l'amplitude réelle des ondes monte
+    proportionnellement → la vidéo se déforme. Pas de blend, pas de
+    calque, pas de bucket distinct : une seule passe continue.
     """
     cfg_la = config.EFFETS.get("lsd_audio", {})
     fichiers = config.AUDIO.get("fichiers", []) or []
@@ -984,11 +979,9 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
     percentile = float(cfg_la.get("percentile", 0.9))
     lissage = int(cfg_la.get("lissage", 2))
     debut_audio = parser_timestamp(cfg_la.get("debut", 0)) or 0
-    # Opacité de l'effet LSD par-dessus la vidéo originale (frame-by-frame)
-    opacite_min = float(cfg_la.get("opacite_min", 0.05))
-    opacite_max = float(cfg_la.get("opacite_max", 0.85))
-    # Paramètres LSD "max" = base × (1 + mod_*) — utilisés pour le rendu unique
-    mod_amp = float(cfg_la.get("mod_amplitude", 1.0))
+    # Facteur d'amplitude : silence → repos_amplitude, pic → 1.0+mod_amp
+    repos_amp = float(cfg_la.get("repos_amplitude", 0.05))
+    mod_amp = float(cfg_la.get("mod_amplitude", 1.5))
     mod_vit = float(cfg_la.get("mod_vitesse", 0.5))
     mod_sat = float(cfg_la.get("mod_saturation", 0.5))
     mod_aber = float(cfg_la.get("mod_aberration", 1.0))
@@ -998,6 +991,11 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
     vit_base = float(cfg_lsd_base.get("vitesse_onde", 0.4))
     sat_base = float(cfg_lsd_base.get("saturation", 2.5))
     aber_base = int(cfg_lsd_base.get("aberration", 8))
+    teinte_base = float(cfg_lsd_base.get("teinte", 240))
+    freq_base = float(cfg_lsd_base.get("frequence_onde", 8))
+    bruit_base = float(cfg_lsd_base.get("bruit", 30))
+    lignes_force = float(cfg_lsd_base.get("lignes_force", 0.7))
+    lignes_mode = cfg_lsd_base.get("lignes_mode", "edges")
 
     rms = _rms_buckets(fichier_audio, duree, n_buckets,
                        debut=debut_audio,
@@ -1007,52 +1005,88 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
 
     print(f"    [lsd_audio] {n_buckets} buckets × {duree_bucket:.2f}s, "
           f"audio={fichier_audio} @ {debut_audio}s, "
-          f"opacite=[{opacite_min}, {opacite_max}]")
+          f"repos={repos_amp}, mod_amp={mod_amp}")
 
     # 1) Grille normale (vidéo source en N×N cellules)
-    mini_n = config.WORK_DIR / f"lsda_mini_norm_{taille}_{int(debut_source)}.mp4"
-    fabriquer_segment(video_source, mini_n, debut_source, duree, cell_w, cell_h)
-    grille_n = config.WORK_DIR / f"lsda_grille_norm_{taille}_{int(debut_source)}.mp4"
-    paths = [mini_n] * (taille * taille)
+    mini = config.WORK_DIR / f"lsda_mini_{taille}_{int(debut_source)}.mp4"
+    fabriquer_segment(video_source, mini, debut_source, duree, cell_w, cell_h)
+    grille = config.WORK_DIR / f"lsda_grille_{taille}_{int(debut_source)}.mp4"
+    paths = [mini] * (taille * taille)
     if (taille * taille) > 256:
-        assembler_grille_par_lignes(taille, paths, duree, grille_n, 0, 0)
+        assembler_grille_par_lignes(taille, paths, duree, grille, 0, 0)
     else:
-        assembler_grille(taille, paths, duree, grille_n, 0, 0)
+        assembler_grille(taille, paths, duree, grille, 0, 0)
 
-    # 2) Grille LSD à params "max" — rendue en continu sur toute la durée
-    grille_lsd = config.WORK_DIR / f"lsda_grille_lsd_{taille}_{int(debut_source)}.mp4"
-    backup = dict(cfg_lsd_base)
-    try:
-        config.EFFETS["lsd"] = {
-            **cfg_lsd_base,
-            "amplitude_onde": amp_base * (1 + mod_amp),
-            "vitesse_onde":   vit_base * (1 + mod_vit),
-            "saturation":     sat_base * (1 + mod_sat),
-            "aberration":     max(1, int(aber_base * (1 + mod_aber))),
-        }
-        creer_effet_lsd(video_source, taille, debut_source, duree,
-                         grille_lsd, cell_w, cell_h, 0, 0)
-    finally:
-        config.EFFETS["lsd"] = backup
-
-    # 3) Expression alpha : linéaire entre opacite_min (silence) et
-    #    opacite_max (pic), suivie d'une lookup par seuils de T.
-    def _alpha(r):
-        return opacite_min + (opacite_max - opacite_min) * r
-    alpha_expr = f"{_alpha(rms[-1]):.4f}"
+    # 2) Expression du facteur d'amplitude en fonction de T :
+    #    facteur(silence=0) = repos_amp ; facteur(pic=1) = repos_amp + mod_amp
+    def _fact(r):
+        return repos_amp + mod_amp * r
+    fact_expr = f"{_fact(rms[-1]):.4f}"
     for i in range(n_buckets - 2, -1, -1):
         t_seuil = (i + 1) * duree_bucket
-        alpha_expr = (f"if(lt(T\\,{t_seuil:.3f})\\,"
-                      f"{_alpha(rms[i]):.4f}\\,{alpha_expr})")
+        fact_expr = (f"if(lt(T\\,{t_seuil:.3f})\\,"
+                     f"{_fact(rms[i]):.4f}\\,{fact_expr})")
 
-    # 4) Blend continu : pixel = original*(1-alpha) + lsd*alpha
-    fusionne = config.WORK_DIR / f"lsda_fusion_{taille}_{int(debut_source)}.mp4"
-    fc = (f"[0:v][1:v]blend=all_expr='"
-          f"A*(1-({alpha_expr}))+B*({alpha_expr})'[v]")
+    # 3) Construire l'expression geq avec amplitude = amp_base × ld(0)
+    grid_w = cell_w * taille
+    grid_h = cell_h * taille
+    cx = grid_w / 2.0
+    cy = grid_h / 2.0
+    f_h = max(1, grid_h / freq_base)
+    f_w = max(1, grid_w / max(0.7, freq_base * 0.7))
+    f_diag = max(1, grid_h / max(0.7, freq_base * 1.3))
+    f_radial = max(1, min(grid_w, grid_h) / max(0.5, freq_base * 1.5))
+    dist = f"sqrt((X-{cx:.1f})*(X-{cx:.1f})+(Y-{cy:.1f})*(Y-{cy:.1f}))"
+    # amp[T] = amp_base × facteur(T). On stocke `facteur` dans le slot 0.
+    init = f"st(0\\,{fact_expr})"
+    A = f"{amp_base:.2f}*ld(0)"
+
+    onde1_x = f"({A})*sin(Y/{f_h:.3f}+T*{vit_base*6.28:.3f})"
+    onde1_mod = f"(0.5+0.5*sin(X/{max(1,grid_w/3):.0f}+T*{vit_base*2.5:.3f}))"
+    onde2_x = f"({A}/2)*sin((X+Y)/{f_diag:.3f}+T*{vit_base*3.5:.3f})"
+    onde2_y = f"({A}/2)*cos((X-Y)/{f_diag:.3f}+T*{vit_base*5.2:.3f})"
+    onde1_y = f"({A}/3)*cos(X/{f_w:.3f}+T*{vit_base*4.5:.3f})"
+    radial_amp = f"({A}/2.5)*sin({dist}/{f_radial:.3f}+T*{vit_base*3.0:.3f})"
+    radial_x = f"({radial_amp})*(X-{cx:.1f})/max({dist}\\,1)"
+    radial_y = f"({radial_amp})*(Y-{cy:.1f})/max({dist}\\,1)"
+
+    expr_x = f"{init}\\;X+{onde1_x}*{onde1_mod}+{onde2_x}+{radial_x}"
+    expr_y = f"{init}\\;Y+{onde1_y}+{onde2_y}+{radial_y}"
+
+    # 4) Pipeline complet : hue (couleur), rgbashift (aberration), geq
+    sat_eff = sat_base * (1 + mod_sat * 0.6)
+    aber_eff = max(1, int(aber_base * (1 + mod_aber * 0.6)))
+    parts = [
+        f"[0:v]hue=h={teinte_base}:s={sat_eff}[col]",
+        (f"[col]rgbashift=rh={aber_eff}:bh=-{aber_eff}"
+         f":rv=-{aber_eff//2}:bv={aber_eff//2}[abr]"),
+    ]
+    if bruit_base > 0:
+        parts.append(f"[abr]noise=alls={bruit_base}:allf=t+u[abr2]")
+        last_label = "abr2"
+    else:
+        last_label = "abr"
+    parts.append(
+        f"[{last_label}]geq="
+        f"r='r({expr_x}\\,{expr_y})':"
+        f"g='g({expr_x}\\,{expr_y})':"
+        f"b='b({expr_x}\\,{expr_y})'[wave]"
+    )
+    if lignes_force > 0:
+        edge_mode = "wires" if lignes_mode == "wires" else "canny"
+        parts.append(
+            f"[wave]split[w1][w2];"
+            f"[w2]edgedetect=mode={edge_mode}:low=0.1:high=0.4,"
+            f"hue=h={teinte_base}:s=3,eq=brightness={lignes_force*0.3}[edges];"
+            f"[w1][edges]blend=all_mode=screen:all_opacity={lignes_force}[v]"
+        )
+    else:
+        parts.append("[wave]copy[v]")
+    fc = ";".join(parts)
+
+    fusionne = config.WORK_DIR / f"lsda_out_{taille}_{int(debut_source)}.mp4"
     run([
-        "ffmpeg", "-y",
-        "-i", str(grille_n),
-        "-i", str(grille_lsd),
+        "ffmpeg", "-y", "-i", str(grille),
         "-filter_complex", fc,
         "-map", "[v]",
         "-t", str(duree),
