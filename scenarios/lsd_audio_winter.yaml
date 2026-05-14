@@ -16,31 +16,31 @@ masques: { actif: false }
 
 effets:
   lsd:
-    amplitude_onde: 60       # base calme
-    vitesse_onde: 0.25
+    amplitude_onde: 100      # base relevée (60 → 100) → ondes plus amples au pic
+    vitesse_onde: 0.35       # un peu plus rapide pour suivre les beats
     frequence_onde: 8
-    aberration: 2
-    saturation: 1.2
+    aberration: 3
+    saturation: 1.3
     teinte: 200              # bleu-violet
-    bruit: 30
-    lignes_force: 0.4
+    bruit: 35                # un peu plus de grain
+    lignes_force: 0.5        # contours plus marqués au pic
     lignes_mode: "edges"
 
   lsd_audio:
     fichier: "musiques/winter.mp3"
     debut: "1:00"            # ⇆ doit matcher audio.fichiers[0].debut !
-    buckets: null            # défaut 4/s
-    lissage: 4               # adoucit la modulation
-    puissance: 2.5
-    percentile: 0.85
+    buckets: null            # défaut 4/s — capture bien les beats
+    lissage: 2               # moins lissé → plus réactif aux attaques
+    puissance: 2.0           # contraste fort silence/pic sans étouffer le moyen
+    percentile: 0.80         # 80e perc → plus de buckets atteignent ~1.0
     # Le facteur multiplie l'amplitude des ondes dans geq :
     #   amplitude_effective = amp_base × (repos + mod_amplitude × rms)
-    # repos très bas → vidéo presque intacte sur les silences
-    # repos + mod_amp(=pic) → déformation maxi
-    repos_amplitude: 0.05    # 5% d'amplitude au repos = vidéo quasi nette
-    mod_amplitude: 1.5       # pic → facteur ≈ 1.55 (amp×1.55 = ample)
-    mod_saturation: 1.0
-    mod_aberration: 2.0
+    # repos bas → vidéo quasi intacte au silence
+    # repos + mod_amp(=pic) → déformation très ample
+    repos_amplitude: 0.03    # 3% au repos = vidéo presque nette
+    mod_amplitude: 3.0       # pic → facteur ≈ 3.03 → amp × 3 = 300 (très ample)
+    mod_saturation: 2.0      # pic → sat × 3.4 = très saturé
+    mod_aberration: 4.0      # pic → aber × 5 = aberration chromatique forte
 
 # Audio : winter.mp3 lu à partir de 1:00
 audio:
