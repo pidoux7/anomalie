@@ -36,7 +36,7 @@ effets:
     # SEUIL : RMS sous ce seuil → effet invisible (repos_amplitude).
     # Au-dessus → rampe linéaire vers le max. Donne un vrai contraste
     # silence/explosion plutôt que mouvement permanent.
-    seuil: 0.55              # ~50% des buckets devraient passer au-dessus
+    seuil: 0.2            # ~50% des buckets devraient passer au-dessus
     # Le facteur multiplie l'amplitude des ondes dans geq :
     #   sous seuil : amp_eff = amp_base × repos_amplitude (vidéo nette)
     #   au-dessus  : amp_eff = amp_base × (repos + mod_amp × normalisé)
