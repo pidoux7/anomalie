@@ -951,20 +951,20 @@ def creer_effet_rotation(video_source, taille, debut_source, duree,
 def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
                            output_path, cell_w, cell_h, pad_x, pad_y):
     """
-    Comme `lsd` mais les paramètres (amplitude, vitesse, saturation,
-    aberration) sont modulés par le RMS de la piste audio.
-    On découpe la durée en N tranches, on calcule le RMS de chacune,
-    on override config.EFFETS["lsd"] pour ce bucket et on appelle
-    creer_effet_lsd. Puis on concatène les buckets.
+    LSD audio-réactif via blend continu :
+      1. Rend UNE grille normale (la vidéo source vue en N×N)
+      2. Rend UNE grille avec LSD à "puissance max" (les ondes tournent
+         continument sur toute la durée — pas de coupures)
+      3. Calcule le RMS de la piste audio par tranches
+      4. Blend frame par frame les 2 vidéos selon une opacité = RMS audio :
+            silence → on voit la vidéo originale (opacite_min)
+            pic     → on voit le LSD (opacite_max)
 
-    Paramètres dans effets.lsd_audio :
-        fichier            : audio à analyser (défaut : 1er de audio.fichiers)
-        buckets            : nombre de tranches (défaut = duree, soit 1/s)
-        mod_amplitude      : amp = amp_base * (1 + mod * rms)   (défaut 1.0)
-        mod_vitesse        : vit = vit_base * (1 + mod * rms)   (défaut 0.5)
-        mod_saturation     : sat = sat_base * (1 + mod * rms)   (défaut 0.5)
-        mod_aberration     : aber = aber_base * (1 + mod * rms) (défaut 1.0)
-    Les paramètres LSD de base (effets.lsd.*) restent la valeur "calme".
+    Avantages vs ancienne approche par N rendus geq distincts :
+      - le LSD est rendu UNE fois → beaucoup plus rapide
+      - les ondes restent continues dans le temps → plus de saccades
+      - la vidéo source reste visible derrière l'effet (problème "on ne
+        voit pas la vidéo" résolu)
     """
     cfg_la = config.EFFETS.get("lsd_audio", {})
     fichiers = config.AUDIO.get("fichiers", []) or []
@@ -979,26 +979,25 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
         print(f"ERREUR lsd_audio : fichier audio introuvable : {fichier_audio}")
         sys.exit(1)
 
-    # 4 buckets / seconde par défaut → suit les beats à 120 BPM (2/s)
     n_buckets = int(cfg_la.get("buckets") or max(4, int(duree * 4)))
+    puissance = float(cfg_la.get("puissance", 2.0))
+    percentile = float(cfg_la.get("percentile", 0.9))
+    lissage = int(cfg_la.get("lissage", 2))
+    debut_audio = parser_timestamp(cfg_la.get("debut", 0)) or 0
+    # Opacité de l'effet LSD par-dessus la vidéo originale (frame-by-frame)
+    opacite_min = float(cfg_la.get("opacite_min", 0.05))
+    opacite_max = float(cfg_la.get("opacite_max", 0.85))
+    # Paramètres LSD "max" = base × (1 + mod_*) — utilisés pour le rendu unique
     mod_amp = float(cfg_la.get("mod_amplitude", 1.0))
     mod_vit = float(cfg_la.get("mod_vitesse", 0.5))
     mod_sat = float(cfg_la.get("mod_saturation", 0.5))
     mod_aber = float(cfg_la.get("mod_aberration", 1.0))
-    puissance = float(cfg_la.get("puissance", 2.0))
-    percentile = float(cfg_la.get("percentile", 0.9))
-    lissage = int(cfg_la.get("lissage", 1))
-    debut_audio = parser_timestamp(cfg_la.get("debut", 0)) or 0
-    teinte_aleatoire = float(cfg_la.get("teinte_aleatoire", 30))
-    frequence_aleatoire = float(cfg_la.get("frequence_aleatoire", 1.5))
 
     cfg_lsd_base = dict(config.EFFETS.get("lsd", {}))
     amp_base = float(cfg_lsd_base.get("amplitude_onde", 120))
     vit_base = float(cfg_lsd_base.get("vitesse_onde", 0.4))
     sat_base = float(cfg_lsd_base.get("saturation", 2.5))
     aber_base = int(cfg_lsd_base.get("aberration", 8))
-    teinte_base = float(cfg_lsd_base.get("teinte", 240))
-    freq_base = float(cfg_lsd_base.get("frequence_onde", 8))
 
     rms = _rms_buckets(fichier_audio, duree, n_buckets,
                        debut=debut_audio,
@@ -1008,41 +1007,59 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
 
     print(f"    [lsd_audio] {n_buckets} buckets × {duree_bucket:.2f}s, "
           f"audio={fichier_audio} @ {debut_audio}s, "
-          f"perc={percentile}, puiss={puissance}, lissage={lissage}")
+          f"opacite=[{opacite_min}, {opacite_max}]")
 
-    # RNG seedé pour reproductibilité entre runs (mais aléatoire par bucket)
-    import random as _rnd
-    seeded = _rnd.Random(f"lsd_audio|{fichier_audio}|{int(debut_audio)}")
-    variations = [(seeded.uniform(-teinte_aleatoire, teinte_aleatoire),
-                   seeded.uniform(-frequence_aleatoire, frequence_aleatoire))
-                  for _ in range(n_buckets)]
+    # 1) Grille normale (vidéo source en N×N cellules)
+    mini_n = config.WORK_DIR / f"lsda_mini_norm_{taille}_{int(debut_source)}.mp4"
+    fabriquer_segment(video_source, mini_n, debut_source, duree, cell_w, cell_h)
+    grille_n = config.WORK_DIR / f"lsda_grille_norm_{taille}_{int(debut_source)}.mp4"
+    paths = [mini_n] * (taille * taille)
+    if (taille * taille) > 256:
+        assembler_grille_par_lignes(taille, paths, duree, grille_n, 0, 0)
+    else:
+        assembler_grille(taille, paths, duree, grille_n, 0, 0)
 
-    segments = []
+    # 2) Grille LSD à params "max" — rendue en continu sur toute la durée
+    grille_lsd = config.WORK_DIR / f"lsda_grille_lsd_{taille}_{int(debut_source)}.mp4"
+    backup = dict(cfg_lsd_base)
     try:
-        for i, rms_val in enumerate(rms):
-            d_teinte, d_freq = variations[i]
-            config.EFFETS["lsd"] = {
-                **cfg_lsd_base,
-                "amplitude_onde": amp_base * (1 + mod_amp * rms_val),
-                "vitesse_onde":   vit_base * (1 + mod_vit * rms_val),
-                "saturation":     sat_base * (1 + mod_sat * rms_val),
-                "aberration":     max(1, int(aber_base * (1 + mod_aber * rms_val))),
-                "teinte":         (teinte_base + d_teinte) % 360,
-                "frequence_onde": max(1.0, freq_base + d_freq),
-            }
-            seg = (config.WORK_DIR
-                   / f"lsd_audio_{taille}_{int(debut_source)}_{i:04d}.mp4")
-            debut_bucket = debut_source + i * duree_bucket
-            # Pas de padding par bucket (on padde le résultat final).
-            creer_effet_lsd(video_source, taille, debut_bucket, duree_bucket,
-                             seg, cell_w, cell_h, 0, 0)
-            segments.append(seg)
+        config.EFFETS["lsd"] = {
+            **cfg_lsd_base,
+            "amplitude_onde": amp_base * (1 + mod_amp),
+            "vitesse_onde":   vit_base * (1 + mod_vit),
+            "saturation":     sat_base * (1 + mod_sat),
+            "aberration":     max(1, int(aber_base * (1 + mod_aber))),
+        }
+        creer_effet_lsd(video_source, taille, debut_source, duree,
+                         grille_lsd, cell_w, cell_h, 0, 0)
     finally:
-        config.EFFETS["lsd"] = cfg_lsd_base
+        config.EFFETS["lsd"] = backup
 
-    # Concat des buckets (même codec/dimensions → concat demuxer OK)
-    fusionne = config.WORK_DIR / f"lsd_audio_concat_{taille}_{int(debut_source)}.mp4"
-    concat_segments_simple(segments, fusionne)
+    # 3) Expression alpha : linéaire entre opacite_min (silence) et
+    #    opacite_max (pic), suivie d'une lookup par seuils de T.
+    def _alpha(r):
+        return opacite_min + (opacite_max - opacite_min) * r
+    alpha_expr = f"{_alpha(rms[-1]):.4f}"
+    for i in range(n_buckets - 2, -1, -1):
+        t_seuil = (i + 1) * duree_bucket
+        alpha_expr = (f"if(lt(T\\,{t_seuil:.3f})\\,"
+                      f"{_alpha(rms[i]):.4f}\\,{alpha_expr})")
+
+    # 4) Blend continu : pixel = original*(1-alpha) + lsd*alpha
+    fusionne = config.WORK_DIR / f"lsda_fusion_{taille}_{int(debut_source)}.mp4"
+    fc = (f"[0:v][1:v]blend=all_expr='"
+          f"A*(1-({alpha_expr}))+B*({alpha_expr})'[v]")
+    run([
+        "ffmpeg", "-y",
+        "-i", str(grille_n),
+        "-i", str(grille_lsd),
+        "-filter_complex", fc,
+        "-map", "[v]",
+        "-t", str(duree),
+        *config.args_encodage(),
+        "-pix_fmt", "yuv420p",
+        str(fusionne)
+    ])
 
     if pad_x > 0 or pad_y > 0:
         run([
