@@ -990,6 +990,12 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
     # Permet d'avoir un vrai contraste calme/explosion au lieu d'un
     # effet présent en permanence.
     seuil = float(cfg_la.get("seuil", 0.0))
+    # Boost de luminosité (compense l'assombrissement dû à hue + déformation
+    # geq qui peut lire des pixels hors-cadre = noir).
+    # Repos = pas de boost ; au pic = luminosite_pic.
+    luminosite_repos = float(cfg_la.get("luminosite_repos", 0.0))
+    luminosite_pic = float(cfg_la.get("luminosite_pic", 0.15))
+    gamma_pic = float(cfg_la.get("gamma_pic", 1.15))
 
     cfg_lsd_base = dict(config.EFFETS.get("lsd", {}))
     amp_base = float(cfg_lsd_base.get("amplitude_onde", 120))
@@ -1041,15 +1047,27 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
     def _sat_fact(r):  # facteur saturation : 1.0 sous seuil, sat × (1+mod) max
         return _ramp(r, 1.0, mod_sat)
 
+    def _bright_fact(r):  # brightness : luminosite_repos sous seuil, luminosite_pic au pic
+        return _ramp(r, luminosite_repos, luminosite_pic - luminosite_repos)
+
+    def _gamma_fact(r):  # gamma : 1.0 sous seuil, gamma_pic au pic
+        return _ramp(r, 1.0, gamma_pic - 1.0)
+
     fact_expr = f"{_fact(rms[-1]):.4f}"
     sat_expr = f"{_sat_fact(rms[-1]):.4f}"
+    bright_expr = f"{_bright_fact(rms[-1]):.4f}"
+    gamma_expr = f"{_gamma_fact(rms[-1]):.4f}"
     for i in range(n_buckets - 2, -1, -1):
         t_seuil = (i + 1) * duree_bucket
         fact_expr = (f"if(lt(T\\,{t_seuil:.3f})\\,"
                      f"{_fact(rms[i]):.4f}\\,{fact_expr})")
-        # hue utilise la variable `t` minuscule (pas T)
+        # hue + eq utilisent la variable `t` minuscule (pas T)
         sat_expr = (f"if(lt(t\\,{t_seuil:.3f})\\,"
                     f"{_sat_fact(rms[i]):.4f}\\,{sat_expr})")
+        bright_expr = (f"if(lt(t\\,{t_seuil:.3f})\\,"
+                       f"{_bright_fact(rms[i]):.4f}\\,{bright_expr})")
+        gamma_expr = (f"if(lt(t\\,{t_seuil:.3f})\\,"
+                      f"{_gamma_fact(rms[i]):.4f}\\,{gamma_expr})")
 
     # 3) Construire l'expression geq avec amplitude = amp_base × ld(0)
     grid_w = cell_w * taille
@@ -1088,7 +1106,11 @@ def creer_effet_lsd_audio(video_source, taille, debut_source, duree,
         f"r='r({expr_x}\\,{expr_y})':"
         f"g='g({expr_x}\\,{expr_y})':"
         f"b='b({expr_x}\\,{expr_y})'[deformed]",
-        f"[deformed]hue=h={teinte_base}:s='{sat_expr}'[wave]",
+        f"[deformed]hue=h={teinte_base}:s='{sat_expr}'[col]",
+        # Compense l'assombrissement (hue bleu/violet + bords noirs geq).
+        # brightness et gamma modulés par audio : repos = vidéo normale,
+        # pic = image plus lumineuse pour rendre l'effet vivant.
+        f"[col]eq=brightness='{bright_expr}':gamma='{gamma_expr}'[wave]",
     ]
     if lignes_force > 0:
         edge_mode = "wires" if lignes_mode == "wires" else "canny"
